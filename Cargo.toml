@@ -1,0 +1,27 @@
+[package]
+name = "mk-screens"
+version = "0.1.0"
+authors = ["Brendan McGloin <stmonkeydoom@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.34"
+async-std = "1.7.0"
+derivative = "2.1.1"
+dotenv = "0.15.0"
+#ffmpeg-next = { version = "4.3.7", features = ["build-lib-x265", "build-lib-x264", "build-lib-openh264", "build-lib-aacplus"] }
+ffmpeg-next = "4.3.7"
+log = { version = "0.4.11", features = ["release_max_level_debug", "max_level_debug"] }
+mime = "0.3.16"
+mime_guess = "2.0.3"
+mktemp = "0.4.0"
+mp4parse = "0.11.4"
+num_cpus = "1.13.0"
+pretty_env_logger = "0.4.0"
+regex = "1.4.2"
+serde = { version = "1.0.117", features = ["derive"] }
+serde_yaml = "0.8.14"
+structopt = "0.3.20"
+thiserror = "1.0.22"

@@ -1,0 +1,27 @@
+default_language_version:
+  python: python3.8
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks.git
+    rev: v3.3.0
+    hooks:
+      - id: check-added-large-files
+      - id: check-case-conflict
+      - id: check-executables-have-shebangs
+      - id: check-xml
+      - id: check-yaml
+      - id: trailing-whitespace
+  - repo: https://github.com/codespell-project/codespell.git
+    rev: v1.17.1
+    hooks:
+      - id: codespell
+        exclude: .*(?:\.spelling-wordlist\.txt|\.lock|Cargo.toml)
+        args: [-I, .spelling-wordlist.txt]
+  - repo: https://github.com/doublify/pre-commit-rust
+    rev: master
+    hooks:
+      #- id: fmt
+        #args: [--verbose, --]
+      - id: clippy
+        #args: [--verbose]
+
+# vi: shiftwidth=2
