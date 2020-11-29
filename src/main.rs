@@ -9,7 +9,6 @@ use thiserror::Error as ThisError;
 pub mod opts;
 //pub mod screencaps;
 pub mod files;
-pub mod util;
 pub mod video;
 
 #[derive(Debug, ThisError)]
@@ -20,17 +19,24 @@ enum Error {
     CorruptVideoStream(PathBuf, ffmpeg::util::error::Error),
 }
 
-fn sandbox() -> Result<()> {
-    dotenv::dotenv().ok();
-    pretty_env_logger::init();
-    let opts = opts::Opts::default();
+fn sandbox(opts: opts::Opts) -> Result<()> {
+    let v = vec![opts.input];
+    let res: Vec<PathBuf> = v
+        .iter()
+        .map(PathBuf::from)
+        .filter(files::mime_filter(&mime::VIDEO))
+        .collect();
+    dbg!(res);
+    //let guesses = mime_guess::from_path(&opts.input)
+    //.into_iter()
+    //.filter(|t| { matches!(t.type_(), mime::VIDEO) })
+    //.count();
+    ////.for_each(|t| {dbg!(t);});
+    //log::info!("{}", guesses);
     Ok(())
 }
 
-fn run() -> Result<()> {
-    dotenv::dotenv().ok();
-    let opts = opts::Opts::default();
-    pretty_env_logger::init();
+fn run(opts: opts::Opts) -> Result<()> {
     ffmpeg::init()?;
     if !opts.out_dir.exists() {
         log::info!(
@@ -42,6 +48,7 @@ fn run() -> Result<()> {
             .create(opts.out_dir.as_path())?;
     }
     let video_files = files::get_video_files_to_process(&opts)?;
+    dbg!(&video_files);
     for path in video_files {
         //let caps = screencaps::generate(path);
     }
@@ -49,6 +56,10 @@ fn run() -> Result<()> {
 }
 
 fn main() -> Result<()> {
-    //sandbox()
-    run()
+    dotenv::dotenv().ok();
+    let opts = opts::Opts::default();
+    pretty_env_logger::init();
+
+    //sandbox(opts)
+    run(opts)
 }

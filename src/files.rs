@@ -163,13 +163,14 @@ impl<'a> FileInfoMap<'a> {
     }
 }
 
-fn mime_filter(mime_type: &mime::Name) -> Box<dyn Fn(&PathBuf) -> bool> {
-    Box::new(|path| {
-        mime_guess::from_path(path)
+pub fn mime_filter(mime_type: &'static mime::Name<'static>) -> Box<dyn Fn(&PathBuf) -> bool> {
+    let mime_type = *mime_type;
+    Box::new(move |path| {
+        let rval = mime_guess::from_path(path)
             .into_iter()
-            .filter(|g| matches!(g.type_(), mime_type))
-            .count()
-            > 0
+            .filter(|g| g.type_() == mime_type)
+            .count();
+        rval > 0
     })
 }
 
