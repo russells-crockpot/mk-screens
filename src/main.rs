@@ -1,14 +1,16 @@
-#![allow(unused_imports, dead_code, unused_variables)]
+#![allow(unused_imports, dead_code, unused_variables, unused_mut)]
 extern crate ffmpeg_next as ffmpeg;
 
-use std::{fs::DirBuilder, path::PathBuf};
+use std::{fs::DirBuilder, iter::repeat, path::PathBuf};
 
 use anyhow::Result;
+use ffmpeg::util::log as ffmpeg_log;
 use thiserror::Error as ThisError;
 
-pub mod opts;
-//pub mod screencaps;
 pub mod files;
+pub mod opts;
+pub mod screencaps;
+pub mod seek;
 pub mod video;
 
 #[derive(Debug, ThisError)]
@@ -20,19 +22,14 @@ enum Error {
 }
 
 fn sandbox(opts: opts::Opts) -> Result<()> {
-    let v = vec![opts.input];
-    let res: Vec<PathBuf> = v
-        .iter()
-        .map(PathBuf::from)
-        .filter(files::mime_filter(&mime::VIDEO))
+    let interval = 10;
+    let start_at = 50;
+    let items: Vec<usize> = repeat(1)
+        .take(10)
+        .enumerate()
+        .map(|(i, _)| i * interval + start_at)
         .collect();
-    dbg!(res);
-    //let guesses = mime_guess::from_path(&opts.input)
-    //.into_iter()
-    //.filter(|t| { matches!(t.type_(), mime::VIDEO) })
-    //.count();
-    ////.for_each(|t| {dbg!(t);});
-    //log::info!("{}", guesses);
+    dbg!(items);
     Ok(())
 }
 
@@ -48,9 +45,8 @@ fn run(opts: opts::Opts) -> Result<()> {
             .create(opts.out_dir.as_path())?;
     }
     let video_files = files::get_video_files_to_process(&opts)?;
-    dbg!(&video_files);
     for path in video_files {
-        //let caps = screencaps::generate(path);
+        let caps = screencaps::generate(&opts, path);
     }
     Ok(())
 }
@@ -58,6 +54,8 @@ fn run(opts: opts::Opts) -> Result<()> {
 fn main() -> Result<()> {
     dotenv::dotenv().ok();
     let opts = opts::Opts::default();
+    //TODO make configurable?
+    ffmpeg_log::set_level(ffmpeg_log::Level::Panic);
     pretty_env_logger::init();
 
     //sandbox(opts)

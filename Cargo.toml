@@ -9,10 +9,14 @@ edition = "2018"
 [dependencies]
 anyhow = "1.0.34"
 async-std = "1.7.0"
+bitflags = "1.2.1"
 derivative = "2.1.1"
 dotenv = "0.15.0"
 #ffmpeg-next = { version = "4.3.7", features = ["build-lib-x265", "build-lib-x264", "build-lib-openh264", "build-lib-aacplus"] }
 ffmpeg-next = "4.3.7"
+ffmpeg-sys-next = "4.3.5"
+image = "0.23.12"
+libc = "0.2.80"
 log = { version = "0.4.11", features = ["release_max_level_debug", "max_level_debug"] }
 mime = "0.3.16"
 mime_guess = "2.0.3"

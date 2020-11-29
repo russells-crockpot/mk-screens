@@ -193,14 +193,16 @@ pub fn get_video_files_to_process(opts: &Opts) -> Result<Vec<PathBuf>> {
         .for_each(|p| files.add_screens_file(p));
     if !opts.keep_files {
         let to_delete = files.get_screens_to_delete();
-        log::info!(
-            "Deleting {} screencap file(s) with no associated video file.",
-            to_delete.len()
-        );
-        for path in to_delete {
-            match remove_file(&path) {
-                Ok(_) => log::info!("Deleted {}", get_filename(&path)),
-                Err(e) => log::warn!("Failed to delete {}. Error: {}", get_filename(&path), e),
+        if !to_delete.is_empty() {
+            log::info!(
+                "Deleting {} screencap file(s) with no associated video file.",
+                to_delete.len()
+            );
+            for path in to_delete {
+                match remove_file(&path) {
+                    Ok(_) => log::info!("Deleted {}", get_filename(&path)),
+                    Err(e) => log::warn!("Failed to delete {}. Error: {}", get_filename(&path), e),
+                }
             }
         }
     }

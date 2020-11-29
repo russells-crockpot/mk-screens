@@ -25,9 +25,9 @@ pub struct Opts {
     pub overwrite: bool,
     #[structopt(short, long)]
     pub verbose: bool,
-    #[structopt(short, long, default_value = "14")]
+    #[structopt(short, long, default_value = "7")]
     pub columns: u16,
-    #[structopt(short, long, default_value = "14")]
+    #[structopt(short, long, default_value = "7")]
     pub rows: u16,
     #[structopt(short, long,
         default_value="5",
@@ -40,6 +40,12 @@ pub struct Opts {
     pub out_dir: PathBuf,
     #[structopt(name = "FILE_OR_DIR", default_value = ".")]
     pub input: PathBuf,
+}
+
+impl Opts {
+    pub fn num_captures(&self) -> u16 {
+        self.columns * self.rows
+    }
 }
 
 impl Default for Opts {
