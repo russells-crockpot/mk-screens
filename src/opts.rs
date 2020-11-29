@@ -1,11 +1,8 @@
 use std::{
-    path::PathBuf,
+    env::{set_var, var_os as get_var},
     num::ParseFloatError,
+    path::PathBuf,
     str::FromStr as _,
-    env::{
-        set_var,
-        var_os as get_var,
-    },
 };
 use structopt::StructOpt;
 
@@ -22,15 +19,15 @@ fn parse_skip(src: &str) -> Result<f64, ParseFloatError> {
     about=env!("CARGO_PKG_DESCRIPTION")
 )]
 pub struct Opts {
-    #[structopt(short="k", long)]
+    #[structopt(short = "k", long)]
     pub keep_files: bool,
-    #[structopt(short="w", long)]
+    #[structopt(short = "w", long)]
     pub overwrite: bool,
     #[structopt(short, long)]
     pub verbose: bool,
-    #[structopt(short, long, default_value="14")]
+    #[structopt(short, long, default_value = "14")]
     pub columns: u16,
-    #[structopt(short, long, default_value="14")]
+    #[structopt(short, long, default_value = "14")]
     pub rows: u16,
     #[structopt(short, long,
         default_value="5",
@@ -39,9 +36,9 @@ pub struct Opts {
     )]
     //TODO Validate value.
     pub skip: f64,
-    #[structopt(short, long, default_value="screens")]
+    #[structopt(short, long, default_value = "screens")]
     pub out_dir: PathBuf,
-    #[structopt(name="FILE_OR_DIR", default_value=".")]
+    #[structopt(name = "FILE_OR_DIR", default_value = ".")]
     pub input: PathBuf,
 }
 

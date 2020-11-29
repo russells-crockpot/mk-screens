@@ -1,21 +1,13 @@
 use std::{
     collections::HashMap,
-    fs::{
-        File,
-        read_dir,
-        remove_file,
-    },
-    path::{
-        PathBuf,
-        Path,
-    },
+    fs::{read_dir, remove_file, File},
+    path::{Path, PathBuf},
     time::SystemTime,
 };
 
 use anyhow::Result;
 
 use crate::opts::Opts;
-
 
 pub fn get_filename<P: AsRef<Path>>(path: &P) -> &str {
     path.as_ref().file_name().unwrap().to_str().unwrap()
@@ -41,12 +33,11 @@ impl FileInfo {
         screens_path.push(img_file_name(&path));
         Self {
             video: Some(path.clone()),
-            screens:
-                if screens_path.exists() && !opts.overwrite {
-                    Some(screens_path)
-                } else {
-                    None
-                },
+            screens: if screens_path.exists() && !opts.overwrite {
+                Some(screens_path)
+            } else {
+                None
+            },
         }
     }
 
@@ -63,7 +54,9 @@ impl FileInfo {
     }
 
     pub fn with_screens(&mut self, opts: &Opts, path: PathBuf) -> &mut Self {
-        if !opts.overwrite { self.screens = Some(path); }
+        if !opts.overwrite {
+            self.screens = Some(path);
+        }
         self
     }
 
@@ -72,16 +65,10 @@ impl FileInfo {
     }
 
     pub fn should_generate_screens(&self) -> Result<bool> {
-        Ok(
-            self.video.is_some()
-            && (
-                self.screens.is_none()
-                ||
-                Self::modified_time(self.video.clone().unwrap())?
-                >
-                Self::modified_time(self.screens.clone().unwrap())?
-            )
-        )
+        Ok(self.video.is_some()
+            && (self.screens.is_none()
+                || Self::modified_time(self.video.clone().unwrap())?
+                    > Self::modified_time(self.screens.clone().unwrap())?))
     }
 
     fn find_video_file(opts: &Opts, path: &PathBuf) -> Option<PathBuf> {
@@ -103,11 +90,15 @@ impl FileInfo {
     }
 
     fn modified_time<P: AsRef<Path>>(path: P) -> Result<SystemTime> {
-            Ok(File::open(path)?.metadata()?.modified()?)
+        Ok(File::open(path)?.metadata()?.modified()?)
     }
 
-    pub fn screens(&self) -> Option<&PathBuf> { self.screens.as_ref() }
-    pub fn video(&self) -> Option<&PathBuf> { self.video.as_ref() }
+    pub fn screens(&self) -> Option<&PathBuf> {
+        self.screens.as_ref()
+    }
+    pub fn video(&self) -> Option<&PathBuf> {
+        self.video.as_ref()
+    }
 }
 
 pub struct FileInfoMap<'a> {
@@ -125,33 +116,43 @@ impl<'a> FileInfoMap<'a> {
 
     pub fn add_video_file(&mut self, path: PathBuf) {
         match self.map.get_mut(get_filename(&path)) {
-            Some(info) => { info.with_video(path); },
-            None => { self.map.insert(
-                String::from(get_filename(&path)),
-                FileInfo::for_video(&self.opts, &path)
-            ); },
+            Some(info) => {
+                info.with_video(path);
+            }
+            None => {
+                self.map.insert(
+                    String::from(get_filename(&path)),
+                    FileInfo::for_video(&self.opts, &path),
+                );
+            }
         }
     }
 
     pub fn add_screens_file(&mut self, path: PathBuf) {
         match self.map.get_mut(get_file_stem(&path)) {
-            Some(info) => { info.with_screens(self.opts, path); },
-            None => { self.map.insert(
-                String::from(get_filename(&path)),
-                FileInfo::for_screens(&self.opts, &path)
-            ); },
+            Some(info) => {
+                info.with_screens(self.opts, path);
+            }
+            None => {
+                self.map.insert(
+                    String::from(get_filename(&path)),
+                    FileInfo::for_screens(&self.opts, &path),
+                );
+            }
         }
     }
 
     pub fn get_screens_to_delete(&self) -> Vec<&PathBuf> {
-        self.map.values()
+        self.map
+            .values()
             .filter(|info| info.should_delete_screens())
             .map(|info| info.screens().unwrap())
             .collect()
     }
 
     pub fn get_videos_to_process(&self) -> Vec<PathBuf> {
-        self.map.values()
+        self.map
+            .values()
             .filter(|info| info.should_generate_screens().unwrap())
             .map(|info| info.video().unwrap().clone())
             .collect()
@@ -164,10 +165,11 @@ impl<'a> FileInfoMap<'a> {
 
 fn mime_filter(mime_type: &mime::Name) -> Box<dyn Fn(&PathBuf) -> bool> {
     Box::new(|path| {
-        mime_guess::from_path(path).into_iter()
-            .filter(|g| { matches!(g.type_(), mime_type) })
+        mime_guess::from_path(path)
+            .into_iter()
+            .filter(|g| matches!(g.type_(), mime_type))
             .count()
-        > 0
+            > 0
     })
 }
 
@@ -176,18 +178,24 @@ pub fn get_video_files_to_process(opts: &Opts) -> Result<Vec<PathBuf>> {
     if opts.input.is_file() {
         vec![opts.input.clone()]
     } else {
-        read_dir(opts.input.as_path())?.map(|f| f.unwrap().path()).collect()
+        read_dir(opts.input.as_path())?
+            .map(|f| f.unwrap().path())
+            .collect()
     }
-        .iter()
-        .map(PathBuf::from)
-        .filter(mime_filter(&mime::VIDEO))
-        .for_each(|p| files.add_video_file(p));
-    read_dir(opts.out_dir.as_path())?.map(|f| f.unwrap().path())
+    .iter()
+    .map(PathBuf::from)
+    .filter(mime_filter(&mime::VIDEO))
+    .for_each(|p| files.add_video_file(p));
+    read_dir(opts.out_dir.as_path())?
+        .map(|f| f.unwrap().path())
         .filter(mime_filter(&mime::IMAGE))
         .for_each(|p| files.add_screens_file(p));
     if !opts.keep_files {
         let to_delete = files.get_screens_to_delete();
-        log::info!("Deleting {} screencap file(s) with no associated video file.", to_delete.len());
+        log::info!(
+            "Deleting {} screencap file(s) with no associated video file.",
+            to_delete.len()
+        );
         for path in to_delete {
             match remove_file(&path) {
                 Ok(_) => log::info!("Deleted {}", get_filename(&path)),

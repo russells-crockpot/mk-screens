@@ -1,21 +1,10 @@
 use std::path::PathBuf;
 
-use anyhow::{
-    Error as AnyhowError,
-    Result,
-};
+use anyhow::{Error as AnyhowError, Result};
 use derivative::Derivative;
-use ffmpeg::{
-    media::Type as MediaType,
-    format::context::Input,
-};
+use ffmpeg::{format::context::Input, media::Type as MediaType};
 
-use crate::{
-    Error,
-    opts::Opts,
-    files::img_file_name,
-};
-
+use crate::{files::img_file_name, opts::Opts, Error};
 
 #[derive(Derivative)]
 #[derivative(Debug)]
@@ -24,7 +13,7 @@ pub struct VidInfo {
     pub duration: u32,
     pub height: u16,
     pub width: u16,
-    #[derivative(Debug="ignore")]
+    #[derivative(Debug = "ignore")]
     pub input: Input,
     pub interval: u32,
 }
@@ -39,21 +28,21 @@ impl VidInfo {
         };
         let video = match stream.codec().decoder().video() {
             Ok(v) => v,
-            Err(e) => return Err(
-                AnyhowError::from(Error::CorruptVideoStream(path, e))
-            ),
+            Err(e) => return Err(AnyhowError::from(Error::CorruptVideoStream(path, e))),
         };
         let duration = stream.duration() as u32;
         let start_at: u32 = (duration as f64 * opts.skip) as u32;
         todo!();
         //Ok(Self {
-            //path,
-            //duration,
-            //width: video.width() as u16,
-            //height: video.height() as u16,
-            //input,
+        //path,
+        //duration,
+        //width: video.width() as u16,
+        //height: video.height() as u16,
+        //input,
         //})
     }
 
-    pub fn img_file_name(&self) -> String { img_file_name(&self.path) }
+    pub fn img_file_name(&self) -> String {
+        img_file_name(&self.path)
+    }
 }

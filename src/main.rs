@@ -1,19 +1,16 @@
 #![allow(unused_imports, dead_code, unused_variables)]
 extern crate ffmpeg_next as ffmpeg;
 
-use std::{
-    path::PathBuf,
-    fs::DirBuilder,
-};
+use std::{fs::DirBuilder, path::PathBuf};
 
 use anyhow::Result;
 use thiserror::Error as ThisError;
 
 pub mod opts;
 //pub mod screencaps;
-pub mod video;
 pub mod files;
 pub mod util;
+pub mod video;
 
 #[derive(Debug, ThisError)]
 enum Error {
@@ -36,8 +33,13 @@ fn run() -> Result<()> {
     pretty_env_logger::init();
     ffmpeg::init()?;
     if !opts.out_dir.exists() {
-        log::info!("Out directory {} doesn't exist. Creating...", opts.out_dir.to_str().unwrap());
-        DirBuilder::new().recursive(true).create(opts.out_dir.as_path())?;
+        log::info!(
+            "Out directory {} doesn't exist. Creating...",
+            opts.out_dir.to_str().unwrap()
+        );
+        DirBuilder::new()
+            .recursive(true)
+            .create(opts.out_dir.as_path())?;
     }
     let video_files = files::get_video_files_to_process(&opts)?;
     for path in video_files {
