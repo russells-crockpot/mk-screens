@@ -40,6 +40,11 @@ fn create_timestamp_filter(
         }
     );
     filter.add(&ffmpeg::filter::find("buffer").unwrap(), "in", &buffer_args)?;
+    filter.add(&filter::find("buffersink").unwrap(), "out", "")?;
+    filter
+        .get("out")
+        .unwrap()
+        .set_pixel_format(PixelFormat::RGB24);
     let drawtext_args = vec![
         "x=(w-tw)/1.05".to_string(),
         "y=h-(2*lh)".to_string(),
@@ -51,12 +56,14 @@ fn create_timestamp_filter(
         "text=%{pts\\:hms}".to_string(),
     ]
     .join(":");
-    filter.add(
-        &ffmpeg::filter::find("drawtext").unwrap(),
-        "btc",
-        &drawtext_args,
+    filter.output("in", 0)?.input("out", 0)?.parse(
+        &vec![
+            format!("drawtext='{}'", drawtext_args),
+            format!("scale=w={}:h={}", out_width, out_height),
+        ]
+        .join(","),
     )?;
-    filter.add(&filter::find("buffersink").unwrap(), "out", "")?;
+    filter.validate()?;
     Ok(filter)
 }
 
@@ -125,12 +132,14 @@ impl VidInfo {
         Ok(self.stream()?.codec().decoder().video()?)
     }
 
-    pub fn get_frame_at(&mut self, ts: i64) -> Result<Vec<u8>> {
+    pub fn get_frame_at(&mut self, ts: i64, out_width: u32, out_height: u32) -> Result<Vec<u8>> {
         log::debug!("Getting frame at {}", ts);
         let mut decoder = self.create_decoder()?;
         self.input
             .seek_to_frame(self.video_stream_idx as i32, ts, SeekFlags::ANY)?;
-        let mut frame = Video::new(self.pixel_format, self.width, self.height);
+        let mut filter =
+            create_timestamp_filter(&decoder, &self.stream()?, self.width, self.height)?;
+        let mut frame = Video::new(self.pixel_format, out_width, out_height);
         // Done to prevent a borrow of self
         let video_stream_idx = self.video_stream_idx;
         self.input
@@ -147,17 +156,9 @@ impl VidInfo {
                 decoder.receive_frame(&mut frame).is_err()
             })
             .last();
-        let mut rgb_frame = Video::new(PixelFormat::RGB24, self.width, self.height);
-        let mut scaler = ScalingContext::get(
-            self.pixel_format,
-            self.width,
-            self.height,
-            PixelFormat::RGB24,
-            self.width,
-            self.height,
-            ScalingFlags::BILINEAR,
-        )?;
-        scaler.run(&frame, &mut rgb_frame)?;
+        filter.get("in").unwrap().source().add(&frame)?;
+        let mut rgb_frame = Video::new(PixelFormat::RGB24, out_width, out_height);
+        filter.get("out").unwrap().sink().frame(&mut rgb_frame)?;
         Ok(rgb_frame.data(0).to_vec())
     }
 }

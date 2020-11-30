@@ -19,7 +19,7 @@ pub struct ScreenCap {
 
 impl ScreenCap {
     pub fn new(ts: i64, width: u32, height: u32, info: &mut VidInfo) -> Result<Self> {
-        let frame_data = info.get_frame_at(ts)?;
+        let frame_data = info.get_frame_at(ts, width, height)?;
         let img = RgbImage::from_raw(info.width, info.height, frame_data).unwrap();
         Ok(Self {
             height,
