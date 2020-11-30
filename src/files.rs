@@ -33,7 +33,7 @@ impl FileInfo {
         screens_path.push(img_file_name(&path));
         Self {
             video: Some(path.clone()),
-            screens: if screens_path.exists() && !opts.overwrite {
+            screens: if screens_path.exists() && !opts.force {
                 Some(screens_path)
             } else {
                 None
@@ -54,7 +54,7 @@ impl FileInfo {
     }
 
     pub fn with_screens(&mut self, opts: &Opts, path: PathBuf) -> &mut Self {
-        if !opts.overwrite {
+        if !opts.force {
             self.screens = Some(path);
         }
         self

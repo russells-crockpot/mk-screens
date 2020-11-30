@@ -18,18 +18,13 @@ use crate::{
     Error,
 };
 
-fn create_timestamp_filter(
-    decoder: &VideoDecoder,
-    stream: &Stream,
-    out_width: u32,
-    out_height: u32,
-) -> Result<Graph> {
+fn create_timestamp_filter(decoder: &VideoDecoder, stream: &Stream) -> Result<Graph> {
     let mut filter = Graph::new();
     let sar = decoder.aspect_ratio();
     let buffer_args = format!(
         "width={}:height={}:video_size={}x{}:pix_fmt={}:time_base={}:sar={}",
-        out_width,
-        out_height,
+        decoder.width(),
+        decoder.height(),
         decoder.width(),
         decoder.height(),
         decoder.format().descriptor().unwrap().name(),
@@ -56,13 +51,10 @@ fn create_timestamp_filter(
         "text=%{pts\\:hms}".to_string(),
     ]
     .join(":");
-    filter.output("in", 0)?.input("out", 0)?.parse(
-        &vec![
-            format!("drawtext='{}'", drawtext_args),
-            format!("scale=w={}:h={}", out_width, out_height),
-        ]
-        .join(","),
-    )?;
+    filter
+        .output("in", 0)?
+        .input("out", 0)?
+        .parse(&format!("drawtext='{}'", drawtext_args))?;
     filter.validate()?;
     Ok(filter)
 }
@@ -73,9 +65,9 @@ pub struct VidInfo {
     pub path: PathBuf,
     pub duration: i64,
     pub pixel_format: PixelFormat,
-    //pub time_base: Rational,
     pub height: u32,
     pub width: u32,
+    pub interval: i64,
     pub video_stream_idx: usize,
     #[derivative(Debug = "ignore")]
     pub input: Input,
@@ -110,7 +102,7 @@ impl VidInfo {
             width: video.width(),
             height: video.height(),
             video_stream_idx: stream.index(),
-            //time_base,
+            interval: stream.frames() / opts.num_captures() as i64,
             input,
             capture_times,
         })
@@ -132,14 +124,13 @@ impl VidInfo {
         Ok(self.stream()?.codec().decoder().video()?)
     }
 
-    pub fn get_frame_at(&mut self, ts: i64, out_width: u32, out_height: u32) -> Result<Vec<u8>> {
+    pub fn get_frame_at(&mut self, ts: i64) -> Result<Vec<u8>> {
         log::debug!("Getting frame at {}", ts);
         let mut decoder = self.create_decoder()?;
         self.input
             .seek_to_frame(self.video_stream_idx as i32, ts, SeekFlags::ANY)?;
-        let mut filter =
-            create_timestamp_filter(&decoder, &self.stream()?, self.width, self.height)?;
-        let mut frame = Video::new(self.pixel_format, out_width, out_height);
+        let mut filter = create_timestamp_filter(&decoder, &self.stream()?)?;
+        let mut frame = Video::new(self.pixel_format, self.width, self.height);
         // Done to prevent a borrow of self
         let video_stream_idx = self.video_stream_idx;
         self.input
@@ -157,7 +148,7 @@ impl VidInfo {
             })
             .last();
         filter.get("in").unwrap().source().add(&frame)?;
-        let mut rgb_frame = Video::new(PixelFormat::RGB24, out_width, out_height);
+        let mut rgb_frame = Video::new(PixelFormat::RGB24, self.width, self.height);
         filter.get("out").unwrap().sink().frame(&mut rgb_frame)?;
         Ok(rgb_frame.data(0).to_vec())
     }

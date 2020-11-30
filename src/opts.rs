@@ -21,8 +21,8 @@ fn parse_skip(src: &str) -> Result<f64, ParseFloatError> {
 pub struct Opts {
     #[structopt(short = "k", long)]
     pub keep_files: bool,
-    #[structopt(short = "z", long)]
-    pub overwrite: bool,
+    #[structopt(short = "f", long)]
+    pub force: bool,
     #[structopt(short = "w", long, default_value = "1920")]
     pub width: u32,
     #[structopt(short, long)]
