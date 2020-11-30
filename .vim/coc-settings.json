@@ -2,7 +2,13 @@
   "cSpell.words": [
     "AVSEEK",
     "bitflags",
+    "boxborderw",
+    "boxcolor",
     "cpus",
+    "drawtext",
+    "fontcolor",
+    "fontsize",
+    "imageops",
     "subargs",
     "subcommand",
     "vidinfo",

@@ -1,13 +1,14 @@
-use std::{iter::repeat, ops::Range, path::PathBuf};
+use std::{iter::repeat, path::PathBuf};
 
 use anyhow::{Error as AnyhowError, Result};
 use derivative::Derivative;
 use ffmpeg::{
     decoder::Video as VideoDecoder,
+    filter::{self, Graph},
     format::{context::Input, stream::Stream, Pixel as PixelFormat},
     media::Type as MediaType,
     software::scaling::{context::Context as ScalingContext, flag::Flags as ScalingFlags},
-    util::{frame::video::Video, rational::Rational},
+    util::frame::video::Video,
 };
 
 use crate::{
@@ -16,6 +17,48 @@ use crate::{
     seek::{Flags as SeekFlags, FrameSeekable as _},
     Error,
 };
+
+fn create_timestamp_filter(
+    decoder: &VideoDecoder,
+    stream: &Stream,
+    out_width: u32,
+    out_height: u32,
+) -> Result<Graph> {
+    let mut filter = Graph::new();
+    let sar = decoder.aspect_ratio();
+    let buffer_args = format!(
+        "width={}:height={}:video_size={}x{}:pix_fmt={}:time_base={}:sar={}",
+        out_width,
+        out_height,
+        decoder.width(),
+        decoder.height(),
+        decoder.format().descriptor().unwrap().name(),
+        stream.time_base(),
+        match sar.numerator() {
+            0 => "1".to_string(),
+            _ => format!("{}/{}", sar.numerator(), sar.denominator()),
+        }
+    );
+    filter.add(&ffmpeg::filter::find("buffer").unwrap(), "in", &buffer_args)?;
+    let drawtext_args = vec![
+        "x=(w-tw)/1.05".to_string(),
+        "y=h-(2*lh)".to_string(),
+        "fontcolor=white".to_string(),
+        "fontsize=72".to_string(),
+        "box=1".to_string(),
+        "boxcolor=black".to_string(),
+        "boxborderw=5".to_string(),
+        "text=%{pts\\:hms}".to_string(),
+    ]
+    .join(":");
+    filter.add(
+        &ffmpeg::filter::find("drawtext").unwrap(),
+        "btc",
+        &drawtext_args,
+    )?;
+    filter.add(&filter::find("buffersink").unwrap(), "out", "")?;
+    Ok(filter)
+}
 
 #[derive(Derivative)]
 #[derivative(Debug)]
@@ -30,23 +73,7 @@ pub struct VidInfo {
     #[derivative(Debug = "ignore")]
     pub input: Input,
     #[derivative(Debug = "ignore")]
-    pub capture_times: Vec<(Range<i64>, i64)>,
-}
-
-#[allow(clippy::type_complexity)]
-fn get_ranges_fn(opts: &Opts, duration: i64) -> Box<dyn Fn((usize, bool)) -> (Range<i64>, i64)> {
-    let start_at = (duration as f64 * opts.skip) as i64;
-    let interval = ((duration - start_at) as f64 / opts.num_captures() as f64) as i64;
-    Box::new(move |(i, _)| {
-        let time = i as i64 * interval + start_at;
-        let start = if i == 0 { 0 } else { time - interval + 1 };
-        let end = if (time + interval) > duration {
-            duration
-        } else {
-            time + interval - 1
-        };
-        (Range { start, end }, time)
-    })
+    pub capture_times: Vec<i64>,
 }
 
 impl VidInfo {
@@ -61,14 +88,13 @@ impl VidInfo {
             Ok(v) => v,
             Err(e) => return Err(AnyhowError::from(Error::CorruptVideoStream(path, e))),
         };
-        //let time_base = video.time_base();
         let duration = stream.duration();
-        //let duration = stream.duration().rescale(video.time_base(), DEFAULT_TIME_BASE);
-        let ranges_fn = get_ranges_fn(&opts, duration);
-        let capture_times: Vec<(Range<i64>, i64)> = repeat(true)
+        let start_at = (duration as f64 * opts.skip) as i64;
+        let interval = ((duration - start_at) as f64 / opts.num_captures() as f64) as i64;
+        let capture_times: Vec<i64> = repeat(true)
             .take(opts.num_captures() as usize)
             .enumerate()
-            .map(ranges_fn)
+            .map(|(i, _)| i as i64 * interval + start_at)
             .collect();
         Ok(Self {
             path,
@@ -99,13 +125,7 @@ impl VidInfo {
         Ok(self.stream()?.codec().decoder().video()?)
     }
 
-    pub fn get_frame_at(
-        &mut self,
-        range: Range<i64>,
-        ts: i64,
-        output_height: u32,
-        output_width: u32,
-    ) -> Result<Vec<u8>> {
+    pub fn get_frame_at(&mut self, ts: i64) -> Result<Vec<u8>> {
         log::debug!("Getting frame at {}", ts);
         let mut decoder = self.create_decoder()?;
         self.input
@@ -127,14 +147,14 @@ impl VidInfo {
                 decoder.receive_frame(&mut frame).is_err()
             })
             .last();
-        let mut rgb_frame = Video::new(PixelFormat::RGB24, output_width, output_height);
+        let mut rgb_frame = Video::new(PixelFormat::RGB24, self.width, self.height);
         let mut scaler = ScalingContext::get(
             self.pixel_format,
             self.width,
             self.height,
             PixelFormat::RGB24,
-            output_width,
-            output_height,
+            self.width,
+            self.height,
             ScalingFlags::BILINEAR,
         )?;
         scaler.run(&frame, &mut rgb_frame)?;

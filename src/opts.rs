@@ -21,14 +21,16 @@ fn parse_skip(src: &str) -> Result<f64, ParseFloatError> {
 pub struct Opts {
     #[structopt(short = "k", long)]
     pub keep_files: bool,
-    #[structopt(short = "w", long)]
+    #[structopt(short = "z", long)]
     pub overwrite: bool,
+    #[structopt(short = "w", long, default_value = "1920")]
+    pub width: u32,
     #[structopt(short, long)]
     pub verbose: bool,
     #[structopt(short, long, default_value = "7")]
-    pub columns: u16,
+    pub columns: u32,
     #[structopt(short, long, default_value = "7")]
-    pub rows: u16,
+    pub rows: u32,
     #[structopt(short, long,
         default_value="5",
         help="The percent of amount of the video to skip at the beginning of the file.",
@@ -43,7 +45,7 @@ pub struct Opts {
 }
 
 impl Opts {
-    pub fn num_captures(&self) -> u16 {
+    pub fn num_captures(&self) -> u32 {
         self.columns * self.rows
     }
 }
