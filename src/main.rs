@@ -1,16 +1,19 @@
 #![allow(unused_imports, dead_code, unused_variables, unused_mut)]
 extern crate ffmpeg_next as ffmpeg;
 
-use std::{fs::DirBuilder, iter::repeat, path::PathBuf};
+use std::{fs::DirBuilder, iter, path::PathBuf, thread};
 
 use anyhow::Result;
 use ffmpeg::util::log as ffmpeg_log;
+use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
+use rayon::prelude::*;
 use thiserror::Error as ThisError;
 
+pub mod ffmpeg_ext;
 pub mod files;
 pub mod opts;
 pub mod screencaps;
-pub mod seek;
+pub mod util;
 pub mod video;
 
 #[derive(Debug, ThisError)]
@@ -21,19 +24,50 @@ enum Error {
     CorruptVideoStream(PathBuf, ffmpeg::util::error::Error),
 }
 
-fn sandbox(opts: opts::Opts) -> Result<()> {
-    let interval = 10;
-    let start_at = 50;
-    let items: Vec<usize> = repeat(1)
-        .take(10)
-        .enumerate()
-        .map(|(i, _)| i * interval + start_at)
+fn error_style() -> ProgressStyle {
+    ProgressStyle::default_bar()
+        .template("[{eta}] {bar:.red/red} {percent}% | {wide_msg}")
+        .progress_chars("███")
+}
+
+fn process_video(pbar: &ProgressBar, opts: &opts::Opts, path: PathBuf) {
+    if !path.exists() {
+        pbar.set_style(error_style());
+        pbar.abandon_with_message(&format!("File {} does not exist.", path.to_str().unwrap()))
+    } else if let Err(error) = screencaps::generate(pbar, opts, path.clone()) {
+        pbar.set_style(error_style());
+        pbar.abandon_with_message(&format!(
+            "{} failed: {}",
+            files::get_file_stem(&path),
+            error
+        ));
+    }
+}
+
+fn rayon_process_videos(opts: &opts::Opts, mut video_files: Vec<PathBuf>) -> Result<()> {
+    let opts = opts.clone();
+    let mp = MultiProgress::with_draw_target(ProgressDrawTarget::stdout());
+    let pstyle =
+        ProgressStyle::default_bar().template("[{eta}] {bar:.cyan/blue} {percent}% | {wide_msg}");
+    let create_pbar = || {
+        let pbar = mp.add(ProgressBar::new((opts.num_captures() + 2) as u64));
+        pbar.set_style(pstyle.clone());
+        Some(pbar)
+    };
+    let items: Vec<(PathBuf, ProgressBar)> = video_files
+        .drain(..)
+        .zip(iter::from_fn(create_pbar))
         .collect();
-    dbg!(items);
+    thread::spawn(move || {
+        items
+            .par_iter()
+            .for_each(|(path, pbar)| process_video(pbar, &opts, path.clone()))
+    });
+    mp.join()?;
     Ok(())
 }
 
-fn run(opts: opts::Opts) -> Result<()> {
+fn run(opts: &opts::Opts) -> Result<()> {
     ffmpeg::init()?;
     if !opts.out_dir.exists() {
         log::info!(
@@ -44,10 +78,9 @@ fn run(opts: opts::Opts) -> Result<()> {
             .recursive(true)
             .create(opts.out_dir.as_path())?;
     }
-    let video_files = files::get_video_files_to_process(&opts)?;
-    for path in video_files {
-        let caps = screencaps::generate(&opts, path);
-    }
+    let video_files = files::get_video_files_to_process(opts)?;
+    //process_videos(&opts, video_files)?;
+    rayon_process_videos(&opts, video_files)?;
     Ok(())
 }
 
@@ -58,6 +91,5 @@ fn main() -> Result<()> {
     ffmpeg_log::set_level(ffmpeg_log::Level::Panic);
     pretty_env_logger::init();
 
-    //sandbox(opts)
-    run(opts)
+    run(&opts)
 }

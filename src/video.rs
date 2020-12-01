@@ -7,34 +7,45 @@ use ffmpeg::{
     filter::{self, Graph},
     format::{context::Input, stream::Stream, Pixel as PixelFormat},
     media::Type as MediaType,
-    software::scaling::{context::Context as ScalingContext, flag::Flags as ScalingFlags},
     util::frame::video::Video,
+    Rational,
 };
 
 use crate::{
+    ffmpeg_ext::{FrameSeekable as _, HasCodedDimensions as _, HasDimensions as _, SeekFlags},
     files::img_file_name,
     opts::Opts,
-    seek::{Flags as SeekFlags, FrameSeekable as _},
+    util::Dimensions,
     Error,
 };
 
+fn format_rational(rational: &Rational) -> String {
+    match rational.numerator() {
+        0 => "1".to_string(),
+        _ => format!("{}/{}", rational.numerator(), rational.denominator()),
+    }
+}
+
 fn create_timestamp_filter(decoder: &VideoDecoder, stream: &Stream) -> Result<Graph> {
     let mut filter = Graph::new();
-    let sar = decoder.aspect_ratio();
-    let buffer_args = format!(
-        "width={}:height={}:video_size={}x{}:pix_fmt={}:time_base={}:sar={}",
-        decoder.width(),
-        decoder.height(),
-        decoder.width(),
-        decoder.height(),
-        decoder.format().descriptor().unwrap().name(),
-        stream.time_base(),
-        match sar.numerator() {
-            0 => "1".to_string(),
-            _ => format!("{}/{}", sar.numerator(), sar.denominator()),
-        }
-    );
-    filter.add(&ffmpeg::filter::find("buffer").unwrap(), "in", &buffer_args)?;
+    let mut buffer_args = vec![
+        format!("width={}", decoder.width()),
+        format!("height={}", decoder.height()),
+        format!("video_size={}x{}", decoder.width(), decoder.height()),
+        format!("time_base={}", stream.time_base()),
+        format!("sar={}", format_rational(&decoder.aspect_ratio())),
+    ];
+    if let Some(frame_rate) = &decoder.frame_rate() {
+        buffer_args.push(format!("frame_rate={}", format_rational(frame_rate)));
+    }
+    if let Some(desc) = decoder.format().descriptor() {
+        buffer_args.push(format!("pix_fmt={}", desc.name()));
+    }
+    filter.add(
+        &ffmpeg::filter::find("buffer").unwrap(),
+        "in",
+        &buffer_args.join(":"),
+    )?;
     filter.add(&filter::find("buffersink").unwrap(), "out", "")?;
     filter
         .get("out")
@@ -73,6 +84,8 @@ pub struct VidInfo {
     pub input: Input,
     #[derivative(Debug = "ignore")]
     pub capture_times: Vec<i64>,
+    #[derivative(Debug = "ignore")]
+    filter: Graph,
 }
 
 impl VidInfo {
@@ -90,6 +103,7 @@ impl VidInfo {
         let duration = stream.duration();
         let start_at = (duration as f64 * opts.skip) as i64;
         let interval = ((duration - start_at) as f64 / opts.num_captures() as f64) as i64;
+        let filter = create_timestamp_filter(&video, &stream)?;
         let capture_times: Vec<i64> = repeat(true)
             .take(opts.num_captures() as usize)
             .enumerate()
@@ -105,6 +119,7 @@ impl VidInfo {
             interval: stream.frames() / opts.num_captures() as i64,
             input,
             capture_times,
+            filter,
         })
     }
 
@@ -124,13 +139,24 @@ impl VidInfo {
         Ok(self.stream()?.codec().decoder().video()?)
     }
 
-    pub fn get_frame_at(&mut self, ts: i64) -> Result<Vec<u8>> {
-        log::debug!("Getting frame at {}", ts);
+    fn get_actual_size(&self, decoder: &VideoDecoder, data_len: u32) -> Dimensions {
+        let pixels = data_len / 3;
+        let coded_dimensions = decoder.coded_dimensions();
+        let video_dimensions = decoder.dimensions();
+        if coded_dimensions == video_dimensions {
+            video_dimensions
+        } else if coded_dimensions.area() == pixels {
+            coded_dimensions
+        } else {
+            video_dimensions
+        }
+    }
+
+    pub fn get_frame_at(&mut self, ts: i64) -> Result<(Dimensions, Vec<u8>)> {
         let mut decoder = self.create_decoder()?;
         self.input
             .seek_to_frame(self.video_stream_idx as i32, ts, SeekFlags::ANY)?;
-        let mut filter = create_timestamp_filter(&decoder, &self.stream()?)?;
-        let mut frame = Video::new(self.pixel_format, self.width, self.height);
+        let mut frame = Video::empty();
         // Done to prevent a borrow of self
         let video_stream_idx = self.video_stream_idx;
         self.input
@@ -147,9 +173,14 @@ impl VidInfo {
                 decoder.receive_frame(&mut frame).is_err()
             })
             .last();
-        filter.get("in").unwrap().source().add(&frame)?;
-        let mut rgb_frame = Video::new(PixelFormat::RGB24, self.width, self.height);
-        filter.get("out").unwrap().sink().frame(&mut rgb_frame)?;
-        Ok(rgb_frame.data(0).to_vec())
+        self.filter.get("in").unwrap().source().add(&frame)?;
+        let mut rgb_frame = Video::empty();
+        self.filter
+            .get("out")
+            .unwrap()
+            .sink()
+            .frame(&mut rgb_frame)?;
+        let data = rgb_frame.data(0).to_vec();
+        Ok((self.get_actual_size(&decoder, data.len() as u32), data))
     }
 }

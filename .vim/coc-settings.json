@@ -10,8 +10,13 @@
     "fontsize",
     "framestep",
     "imageops",
+    "multiprogress",
+    "pbar",
+    "pstyle",
     "subargs",
     "subcommand",
+    "varname",
+    "vidfile",
     "vidinfo",
     "vstream"
   ]

@@ -1,14 +1,12 @@
 use anyhow::Result;
 use derivative::Derivative;
 use ffmpeg::format::Pixel;
-use image::{
-    codecs::jpeg::JpegEncoder, imageops, ColorType, GenericImage as _, GenericImageView as _,
-    ImageFormat, RgbImage,
-};
+use image::{imageops, ImageFormat, RgbImage};
+use indicatif::ProgressBar;
 use itertools::Itertools as _;
-use std::{fs::File, path::PathBuf};
+use std::{fs::DirBuilder, path::PathBuf};
 
-use crate::{files::get_filename, opts::Opts, video::VidInfo};
+use crate::{files::get_file_stem, opts::Opts, util::envvar_to_bool, video::VidInfo};
 
 #[derive(Derivative)]
 #[derivative(Debug)]
@@ -23,16 +21,20 @@ pub struct ScreenCap {
 
 impl ScreenCap {
     pub fn new(ts: i64, width: u32, height: u32, info: &mut VidInfo) -> Result<Self> {
-        let frame_data = info.get_frame_at(ts)?;
-        let img = RgbImage::from_raw(info.width, info.height, frame_data).unwrap();
+        let (dimensions, frame_data) = info.get_frame_at(ts)?;
+        let img = RgbImage::from_raw(dimensions.width(), dimensions.height(), frame_data).unwrap();
         //let img = RgbImage::from_raw(info.width, info.height, frame_data).unwrap();
         Ok(Self {
             height,
             width,
             time: ts,
             pixel_format: info.pixel_format,
-            image: imageops::thumbnail(&img, width, height),
+            image: img,
         })
+    }
+
+    pub fn thumbnail(&self) -> RgbImage {
+        imageops::thumbnail(&self.image, self.width, self.height)
     }
 
     pub fn save_file(&self, path: PathBuf) -> Result<()> {
@@ -42,9 +44,31 @@ impl ScreenCap {
     }
 }
 
-pub fn generate(opts: &Opts, path: PathBuf) -> Result<()> {
-    log::info!("Generating screens for {}", get_filename(&path));
-    let mut info = VidInfo::new(opts, path)?;
+fn save_individual_img(opts: &Opts, cap: &ScreenCap, vidfile: &PathBuf, idx: usize) -> Result<()> {
+    let mut out_path = opts.out_dir.clone();
+    if envvar_to_bool("DIR_FOR_EACH_INDIVIDUAL_CAPTURES") {
+        out_path.push(vidfile.file_stem().unwrap());
+        if !out_path.exists() {
+            DirBuilder::new()
+                .recursive(true)
+                .create(opts.out_dir.as_path())?;
+        }
+    }
+    out_path.push(format!(
+        "{}-{}.jpeg",
+        vidfile.file_stem().unwrap().to_str().unwrap(),
+        idx
+    ));
+    cap.save_file(out_path)?;
+    Ok(())
+}
+
+pub fn generate(pbar: &ProgressBar, opts: &Opts, path: PathBuf) -> Result<()> {
+    //log::info!("Generating screens for {}", get_filename(&path));
+    pbar.set_message(get_file_stem(&path));
+    let mut info = VidInfo::new(opts, path.clone())?;
+    pbar.inc(1);
+    let save_individual_imgs = envvar_to_bool("SAVE_INDIVIDUAL_CAPTURES");
     let times = info.capture_times.clone();
     let capture_width = (info.width - (opts.columns * 4)) / opts.columns;
     let capture_height = ((capture_width as f64 / info.width as f64) * info.height as f64) as u32;
@@ -57,15 +81,15 @@ pub fn generate(opts: &Opts, path: PathBuf) -> Result<()> {
     let captures = times
         .iter()
         .map(|ts| ScreenCap::new(*ts, capture_width, capture_height, &mut info).unwrap())
+        .enumerate()
+        .inspect(|_| pbar.inc(1))
         .chunks(opts.rows as usize);
-    //let captures: Vec<ScreenCap> = times
-    //.iter()
-    //.map(|ts| ScreenCap::new(*ts, capture_width, capture_height, &mut info).unwrap())
-    //.collect();
-    let mut idx = 0;
     for chunk in &captures {
-        for capture in chunk {
-            imageops::replace(&mut img, &capture.image, current_x, current_y);
+        for (idx, capture) in chunk {
+            imageops::replace(&mut img, &capture.thumbnail(), current_x, current_y);
+            if save_individual_imgs {
+                save_individual_img(opts, &capture, &path, idx)?;
+            }
             current_x += capture_width + 2;
         }
         current_y += capture_height + 2;
@@ -74,5 +98,6 @@ pub fn generate(opts: &Opts, path: PathBuf) -> Result<()> {
     let mut out_path = opts.out_dir.clone();
     out_path.push(info.img_file_name());
     img.save_with_format(out_path, ImageFormat::Jpeg)?;
+    pbar.finish();
     Ok(())
 }

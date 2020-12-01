@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     fs::{read_dir, remove_file, File},
+    iter,
     path::{Path, PathBuf},
     time::SystemTime,
 };
@@ -41,10 +42,10 @@ impl FileInfo {
         }
     }
 
-    pub fn for_screens(opts: &Opts, path: &PathBuf) -> Self {
+    pub fn for_screens(video_files: &[PathBuf], path: &PathBuf) -> Self {
         Self {
             screens: Some(path.clone()),
-            video: Self::find_video_file(opts, path),
+            video: Self::find_video_file(video_files, path),
         }
     }
 
@@ -71,22 +72,14 @@ impl FileInfo {
                     > Self::modified_time(self.screens.clone().unwrap())?))
     }
 
-    fn find_video_file(opts: &Opts, path: &PathBuf) -> Option<PathBuf> {
-        if opts.input.is_file() {
-            if get_filename(&opts.input) == get_file_stem(&path) {
-                Some(opts.input.clone())
-            } else {
-                None
-            }
-        } else {
-            let mut source_path = opts.input.clone();
-            source_path.push(get_file_stem(&path));
-            if source_path.exists() {
-                Some(source_path)
-            } else {
-                None
+    fn find_video_file(video_files: &[PathBuf], path: &PathBuf) -> Option<PathBuf> {
+        let stem = get_file_stem(&path);
+        for vid in video_files {
+            if get_filename(vid) == stem {
+                return Some(vid.clone());
             }
         }
+        None
     }
 
     fn modified_time<P: AsRef<Path>>(path: P) -> Result<SystemTime> {
@@ -128,7 +121,7 @@ impl<'a> FileInfoMap<'a> {
         }
     }
 
-    pub fn add_screens_file(&mut self, path: PathBuf) {
+    pub fn add_screens_file(&mut self, path: PathBuf, video_files: &[PathBuf]) {
         match self.map.get_mut(get_file_stem(&path)) {
             Some(info) => {
                 info.with_screens(self.opts, path);
@@ -136,7 +129,7 @@ impl<'a> FileInfoMap<'a> {
             None => {
                 self.map.insert(
                     String::from(get_filename(&path)),
-                    FileInfo::for_screens(&self.opts, &path),
+                    FileInfo::for_screens(video_files, &path),
                 );
             }
         }
@@ -176,21 +169,30 @@ pub fn mime_filter(mime_type: &'static mime::Name<'static>) -> Box<dyn Fn(&PathB
 
 pub fn get_video_files_to_process(opts: &Opts) -> Result<Vec<PathBuf>> {
     let mut files = FileInfoMap::new(opts);
-    if opts.input.is_file() {
-        vec![opts.input.clone()]
-    } else {
-        read_dir(opts.input.as_path())?
-            .map(|f| f.unwrap().path())
-            .collect()
-    }
-    .iter()
-    .map(PathBuf::from)
-    .filter(mime_filter(&mime::VIDEO))
-    .for_each(|p| files.add_video_file(p));
+    let video_files: Vec<PathBuf> = opts
+        .input
+        .iter()
+        .map(|p| {
+            if p.is_file() {
+                iter::once(p.clone()).collect::<Vec<PathBuf>>()
+            } else {
+                match read_dir(p.as_path()) {
+                    Ok(entries) => entries.map(|f| f.unwrap().path()).collect(),
+                    Err(_) => iter::empty().collect(),
+                }
+            }
+        })
+        .flatten()
+        .map(PathBuf::from)
+        .filter(mime_filter(&mime::VIDEO))
+        .collect();
+    video_files
+        .iter()
+        .for_each(|p| files.add_video_file(p.clone()));
     read_dir(opts.out_dir.as_path())?
         .map(|f| f.unwrap().path())
         .filter(mime_filter(&mime::IMAGE))
-        .for_each(|p| files.add_screens_file(p));
+        .for_each(|p| files.add_screens_file(p, &video_files));
     if !opts.keep_files {
         let to_delete = files.get_screens_to_delete();
         if !to_delete.is_empty() {
