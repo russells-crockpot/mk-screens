@@ -7,12 +7,16 @@ use ffmpeg::{
     filter::{self, Graph},
     format::{context::Input, stream::Stream, Pixel as PixelFormat},
     media::Type as MediaType,
+    software::{
+        scaler,
+        scaling::{context::Context as ScalingContext, flag::Flags as ScalingFlags},
+    },
     util::frame::video::Video,
     Rational,
 };
 
 use crate::{
-    ffmpeg_ext::{FrameSeekable as _, HasCodedDimensions as _, HasDimensions as _, SeekFlags},
+    ffmpeg_ext::{FrameSeekable as _, LinkableGraph as _, SeekFlags},
     files::img_file_name,
     opts::Opts,
     util::Dimensions,
@@ -26,8 +30,8 @@ fn format_rational(rational: &Rational) -> String {
     }
 }
 
-fn create_timestamp_filter(decoder: &VideoDecoder, stream: &Stream) -> Result<Graph> {
-    let mut filter = Graph::new();
+fn create_filter_graph(decoder: &VideoDecoder, stream: &Stream, out_width: u32) -> Result<Graph> {
+    let mut graph = Graph::new();
     let mut buffer_args = vec![
         format!("width={}", decoder.width()),
         format!("height={}", decoder.height()),
@@ -41,16 +45,12 @@ fn create_timestamp_filter(decoder: &VideoDecoder, stream: &Stream) -> Result<Gr
     if let Some(desc) = decoder.format().descriptor() {
         buffer_args.push(format!("pix_fmt={}", desc.name()));
     }
-    filter.add(
+    graph.add(
         &ffmpeg::filter::find("buffer").unwrap(),
         "in",
         &buffer_args.join(":"),
     )?;
-    filter.add(&filter::find("buffersink").unwrap(), "out", "")?;
-    filter
-        .get("out")
-        .unwrap()
-        .set_pixel_format(PixelFormat::RGB24);
+    graph.add(&filter::find("buffersink").unwrap(), "out", "")?;
     let drawtext_args = vec![
         "x=(w-tw)/1.05".to_string(),
         "y=h-(2*lh)".to_string(),
@@ -62,30 +62,46 @@ fn create_timestamp_filter(decoder: &VideoDecoder, stream: &Stream) -> Result<Gr
         "text=%{pts\\:hms}".to_string(),
     ]
     .join(":");
-    filter
-        .output("in", 0)?
-        .input("out", 0)?
-        .parse(&format!("drawtext='{}'", drawtext_args))?;
-    filter.validate()?;
-    Ok(filter)
+    graph.add(
+        &filter::find("format").unwrap(),
+        "pix_fmt",
+        &PixelFormat::RGB24.descriptor().unwrap().name(),
+    )?;
+    graph.add(&filter::find("drawtext").unwrap(), "btc", &drawtext_args)?;
+    graph.add(
+        &filter::find("scale").unwrap(),
+        "scale",
+        &vec![
+            format!("w={}", out_width),
+            "h=-1".to_string(),
+            "eval=frame".to_string(),
+            "flags=fast_bilinear".to_string(),
+        ]
+        .join(":"),
+    )?;
+    graph.chain_link(&["in", "pix_fmt", "btc", "scale", "out"])?;
+    graph.validate()?;
+    Ok(graph)
 }
 
 #[derive(Derivative)]
 #[derivative(Debug)]
 pub struct VidInfo {
     pub path: PathBuf,
-    pub duration: i64,
+    duration: i64,
     pub pixel_format: PixelFormat,
-    pub height: u32,
-    pub width: u32,
-    pub interval: i64,
-    pub video_stream_idx: usize,
+    dimensions: Dimensions,
+    pub capture_dimensions: Dimensions,
+    interval: i64,
+    video_stream_idx: usize,
     #[derivative(Debug = "ignore")]
-    pub input: Input,
+    input: Input,
     #[derivative(Debug = "ignore")]
     pub capture_times: Vec<i64>,
     #[derivative(Debug = "ignore")]
     filter: Graph,
+    #[derivative(Debug = "ignore")]
+    scaler: ScalingContext,
 }
 
 impl VidInfo {
@@ -96,14 +112,28 @@ impl VidInfo {
         } else {
             return Err(AnyhowError::from(Error::NoVideoStream(path)));
         };
-        let video = match stream.codec().decoder().video() {
+        let decoder = match stream.codec().decoder().video() {
             Ok(v) => v,
             Err(e) => return Err(AnyhowError::from(Error::CorruptVideoStream(path, e))),
         };
+        let dimensions = Dimensions::new(decoder.width(), decoder.height());
         let duration = stream.duration();
         let start_at = (duration as f64 * opts.skip) as i64;
         let interval = ((duration - start_at) as f64 / opts.num_captures() as f64) as i64;
-        let filter = create_timestamp_filter(&video, &stream)?;
+        let mut capture_width = (opts.width - (opts.columns * 4)) / opts.columns;
+        if !opts.scale_up && capture_width > dimensions.width() {
+            capture_width = dimensions.width();
+        }
+        let capture_height =
+            (capture_width as f64 / dimensions.width() as f64) * dimensions.height() as f64;
+        let capture_dimensions = Dimensions::new(capture_width, capture_height as u32);
+        let scaler = scaler(
+            PixelFormat::RGB24,
+            ScalingFlags::BILINEAR,
+            dimensions.as_tuple(),
+            capture_dimensions.as_tuple(),
+        )?;
+        let filter = create_filter_graph(&decoder, &stream, capture_width)?;
         let capture_times: Vec<i64> = repeat(true)
             .take(opts.num_captures() as usize)
             .enumerate()
@@ -112,15 +142,23 @@ impl VidInfo {
         Ok(Self {
             path,
             duration,
-            pixel_format: video.format(),
-            width: video.width(),
-            height: video.height(),
+            pixel_format: decoder.format(),
+            dimensions,
+            capture_dimensions,
             video_stream_idx: stream.index(),
             interval: stream.frames() / opts.num_captures() as i64,
             input,
             capture_times,
             filter,
+            scaler,
         })
+    }
+
+    pub fn width(&self) -> u32 {
+        self.dimensions.width()
+    }
+    pub fn height(&self) -> u32 {
+        self.dimensions.height()
     }
 
     pub fn stream<'a>(&'a self) -> Result<Stream<'a>> {
@@ -139,17 +177,8 @@ impl VidInfo {
         Ok(self.stream()?.codec().decoder().video()?)
     }
 
-    fn get_actual_size(&self, decoder: &VideoDecoder, data_len: u32) -> Dimensions {
-        let pixels = data_len / 3;
-        let coded_dimensions = decoder.coded_dimensions();
-        let video_dimensions = decoder.dimensions();
-        if coded_dimensions == video_dimensions {
-            video_dimensions
-        } else if coded_dimensions.area() == pixels {
-            coded_dimensions
-        } else {
-            video_dimensions
-        }
+    fn get_actual_size(&self, frame: &Video) -> Dimensions {
+        Dimensions((frame.stride(0) / 3) as u32, frame.height())
     }
 
     pub fn get_frame_at(&mut self, ts: i64) -> Result<(Dimensions, Vec<u8>)> {
@@ -181,6 +210,6 @@ impl VidInfo {
             .sink()
             .frame(&mut rgb_frame)?;
         let data = rgb_frame.data(0).to_vec();
-        Ok((self.get_actual_size(&decoder, data.len() as u32), data))
+        Ok((self.get_actual_size(&rgb_frame), data))
     }
 }

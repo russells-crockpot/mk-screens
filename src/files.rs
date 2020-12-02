@@ -146,6 +146,7 @@ impl<'a> FileInfoMap<'a> {
     pub fn get_videos_to_process(&self) -> Vec<PathBuf> {
         self.map
             .values()
+            //TODO
             .filter(|info| info.should_generate_screens().unwrap())
             .map(|info| info.video().unwrap().clone())
             .collect()
@@ -183,6 +184,7 @@ pub fn get_video_files_to_process(opts: &Opts) -> Result<Vec<PathBuf>> {
             }
         })
         .flatten()
+        .filter(|p| p.exists())
         .map(PathBuf::from)
         .filter(mime_filter(&mime::VIDEO))
         .collect();
@@ -191,6 +193,7 @@ pub fn get_video_files_to_process(opts: &Opts) -> Result<Vec<PathBuf>> {
         .for_each(|p| files.add_video_file(p.clone()));
     read_dir(opts.out_dir.as_path())?
         .map(|f| f.unwrap().path())
+        .filter(|p| p.exists())
         .filter(mime_filter(&mime::IMAGE))
         .for_each(|p| files.add_screens_file(p, &video_files));
     if !opts.keep_files {

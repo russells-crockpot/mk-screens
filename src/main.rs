@@ -22,11 +22,13 @@ enum Error {
     NoVideoStream(PathBuf),
     #[error("Could not read video stream for file {0}. Error: {1}")]
     CorruptVideoStream(PathBuf, ffmpeg::util::error::Error),
+    #[error("Could not find filter named {0}.")]
+    NoSuchFilter(String),
 }
 
 fn error_style() -> ProgressStyle {
     ProgressStyle::default_bar()
-        .template("[{eta}] {bar:.red/red} {percent}% | {wide_msg}")
+        .template("[{eta:>5}] {bar:.red/red} {percent:3}% | {wide_msg}")
         .progress_chars("███")
 }
 
@@ -46,9 +48,13 @@ fn process_video(pbar: &ProgressBar, opts: &opts::Opts, path: PathBuf) {
 
 fn rayon_process_videos(opts: &opts::Opts, mut video_files: Vec<PathBuf>) -> Result<()> {
     let opts = opts.clone();
-    let mp = MultiProgress::with_draw_target(ProgressDrawTarget::stdout());
-    let pstyle =
-        ProgressStyle::default_bar().template("[{eta}] {bar:.cyan/blue} {percent}% | {wide_msg}");
+    let mp = if util::envvar_to_bool("HIDE_PROGRESS_BARS") {
+        MultiProgress::with_draw_target(ProgressDrawTarget::hidden())
+    } else {
+        MultiProgress::new()
+    };
+    let pstyle = ProgressStyle::default_bar()
+        .template("[{eta:>5}] {bar:.cyan/blue} {percent:3}% | {wide_msg}");
     let create_pbar = || {
         let pbar = mp.add(ProgressBar::new((opts.num_captures() + 2) as u64));
         pbar.set_style(pstyle.clone());
@@ -59,9 +65,15 @@ fn rayon_process_videos(opts: &opts::Opts, mut video_files: Vec<PathBuf>) -> Res
         .zip(iter::from_fn(create_pbar))
         .collect();
     thread::spawn(move || {
-        items
-            .par_iter()
-            .for_each(|(path, pbar)| process_video(pbar, &opts, path.clone()))
+        if opts.synchronous {
+            items
+                .iter()
+                .for_each(|(path, pbar)| process_video(pbar, &opts, path.clone()));
+        } else {
+            items
+                .par_iter()
+                .for_each(|(path, pbar)| process_video(pbar, &opts, path.clone()));
+        }
     });
     mp.join()?;
     Ok(())
@@ -92,4 +104,5 @@ fn main() -> Result<()> {
     pretty_env_logger::init();
 
     run(&opts)
+    //sandbox(&opts)
 }

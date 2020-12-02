@@ -6,3 +6,6 @@ pub mod coded_dim;
 pub use coded_dim::HasCodedDimensions;
 pub mod dimensions;
 pub use dimensions::HasDimensions;
+pub mod filters;
+pub use filters::LinkableFilterContext;
+pub use filters::LinkableGraph;

@@ -1,6 +1,6 @@
 use std::{
     env::{set_var, var_os as get_var},
-    num::{ParseFloatError, ParseIntError},
+    num::ParseFloatError,
     path::PathBuf,
     str::FromStr as _,
 };
@@ -8,19 +8,6 @@ use structopt::StructOpt;
 
 fn parse_skip(src: &str) -> Result<f64, ParseFloatError> {
     Ok(f64::from_str(src)? / 100.0)
-}
-
-fn parse_jobs(src: &str) -> Result<usize, ParseIntError> {
-    if src.is_empty() {
-        let cpus = num_cpus::get();
-        if cpus == 1 {
-            Ok(cpus)
-        } else {
-            Ok(cpus / 2)
-        }
-    } else {
-        Ok(usize::from_str(src)?)
-    }
 }
 
 #[derive(Debug, StructOpt, Clone)]
@@ -36,20 +23,23 @@ pub struct Opts {
     pub keep_files: bool,
     #[structopt(short = "f", long)]
     pub force: bool,
-    #[structopt(short = "j", long,
-        default_value = "",
-        parse(try_from_str = parse_jobs),
+    #[structopt(
+        short = "u",
+        long,
+        help = "If the video is smaller than the thumbnails would be, then scale up the thumbnail."
     )]
-    pub jobs: usize,
+    pub scale_up: bool,
+    #[structopt(short = "y", long, help = "Process only one video at a time.")]
+    pub synchronous: bool,
     #[structopt(short = "w", long, default_value = "3840")]
     pub width: u32,
     #[structopt(short, long)]
     pub verbose: bool,
-    //#[structopt(short, long, default_value = "25")]
-    #[structopt(short, long, default_value = "3")]
+    #[structopt(short, long, default_value = "25")]
+    //#[structopt(short, long, default_value = "3")]
     pub columns: u32,
-    //#[structopt(short, long, default_value = "8")]
-    #[structopt(short, long, default_value = "3")]
+    #[structopt(short, long, default_value = "8")]
+    //#[structopt(short, long, default_value = "3")]
     pub rows: u32,
     #[structopt(short, long,
         default_value="5",

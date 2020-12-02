@@ -1,5 +1,10 @@
-use std::{env, str::FromStr as _};
+use std::{
+    env,
+    fmt::{self, Display, Formatter},
+    str::FromStr as _,
+};
 
+#[derive(Debug, Clone)]
 pub struct Dimensions(pub u32, pub u32);
 
 impl Dimensions {
@@ -14,6 +19,16 @@ impl Dimensions {
     }
     pub fn area(&self) -> u32 {
         self.height() * self.width()
+    }
+
+    pub fn as_tuple(&self) -> (u32, u32) {
+        (self.width(), self.height())
+    }
+}
+
+impl Display for Dimensions {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}x{}", self.width(), self.height())
     }
 }
 
