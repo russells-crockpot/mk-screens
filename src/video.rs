@@ -23,6 +23,8 @@ use crate::{
     Error,
 };
 
+const BACK_TRIM_AMOUNT: f64 = 0.01;
+
 fn format_rational(rational: &Rational) -> String {
     match rational.numerator() {
         0 => "1".to_string(),
@@ -30,7 +32,11 @@ fn format_rational(rational: &Rational) -> String {
     }
 }
 
-fn create_filter_graph(decoder: &VideoDecoder, stream: &Stream, out_width: u32) -> Result<Graph> {
+fn create_filter_graph(
+    decoder: &VideoDecoder,
+    stream: &Stream,
+    out_dims: &Dimensions,
+) -> Result<Graph> {
     let mut graph = Graph::new();
     let mut buffer_args = vec![
         format!("width={}", decoder.width()),
@@ -55,10 +61,10 @@ fn create_filter_graph(decoder: &VideoDecoder, stream: &Stream, out_width: u32) 
         "x=(w-tw)/1.05".to_string(),
         "y=h-(2*lh)".to_string(),
         "fontcolor=white".to_string(),
-        "fontsize=72".to_string(),
+        format!("fontsize={}", out_dims.height() / 7),
         "box=1".to_string(),
         "boxcolor=black".to_string(),
-        "boxborderw=5".to_string(),
+        format!("boxborderw={}", out_dims.height() / 45),
         "text=%{pts\\:hms}".to_string(),
     ]
     .join(":");
@@ -72,16 +78,21 @@ fn create_filter_graph(decoder: &VideoDecoder, stream: &Stream, out_width: u32) 
         &filter::find("scale").unwrap(),
         "scale",
         &vec![
-            format!("w={}", out_width),
-            "h=-1".to_string(),
+            format!("w={}", out_dims.width()),
+            format!("h={}", out_dims.height()),
             "eval=frame".to_string(),
             "flags=fast_bilinear".to_string(),
         ]
         .join(":"),
     )?;
-    graph.chain_link(&["in", "pix_fmt", "btc", "scale", "out"])?;
+    graph.chain_link(&["in", "pix_fmt", "scale", "btc", "out"])?;
     graph.validate()?;
     Ok(graph)
+}
+
+pub struct FrameInfo {
+    dimensions: Dimensions,
+    crop_to: Dimensions,
 }
 
 #[derive(Derivative)]
@@ -100,8 +111,6 @@ pub struct VidInfo {
     pub capture_times: Vec<i64>,
     #[derivative(Debug = "ignore")]
     filter: Graph,
-    #[derivative(Debug = "ignore")]
-    scaler: ScalingContext,
 }
 
 impl VidInfo {
@@ -116,10 +125,8 @@ impl VidInfo {
             Ok(v) => v,
             Err(e) => return Err(AnyhowError::from(Error::CorruptVideoStream(path, e))),
         };
-        let dimensions = Dimensions::new(decoder.width(), decoder.height());
         let duration = stream.duration();
-        let start_at = (duration as f64 * opts.skip) as i64;
-        let interval = ((duration - start_at) as f64 / opts.num_captures() as f64) as i64;
+        let dimensions = Dimensions::new(decoder.width(), decoder.height());
         let mut capture_width = (opts.width - (opts.columns * 4)) / opts.columns;
         if !opts.scale_up && capture_width > dimensions.width() {
             capture_width = dimensions.width();
@@ -127,18 +134,7 @@ impl VidInfo {
         let capture_height =
             (capture_width as f64 / dimensions.width() as f64) * dimensions.height() as f64;
         let capture_dimensions = Dimensions::new(capture_width, capture_height as u32);
-        let scaler = scaler(
-            PixelFormat::RGB24,
-            ScalingFlags::BILINEAR,
-            dimensions.as_tuple(),
-            capture_dimensions.as_tuple(),
-        )?;
-        let filter = create_filter_graph(&decoder, &stream, capture_width)?;
-        let capture_times: Vec<i64> = repeat(true)
-            .take(opts.num_captures() as usize)
-            .enumerate()
-            .map(|(i, _)| i as i64 * interval + start_at)
-            .collect();
+        let filter = create_filter_graph(&decoder, &stream, &capture_dimensions)?;
         Ok(Self {
             path,
             duration,
@@ -148,10 +144,21 @@ impl VidInfo {
             video_stream_idx: stream.index(),
             interval: stream.frames() / opts.num_captures() as i64,
             input,
-            capture_times,
+            capture_times: Self::generate_capture_times(opts, duration),
             filter,
-            scaler,
         })
+    }
+
+    fn generate_capture_times(opts: &Opts, duration: i64) -> Vec<i64> {
+        let start_at = (duration as f64 * opts.skip) as i64;
+        let back_trim = (duration as f64 * BACK_TRIM_AMOUNT) as i64;
+        let interval =
+            ((duration - start_at - back_trim) as f64 / opts.num_captures() as f64) as i64;
+        repeat(true)
+            .take(opts.num_captures() as usize)
+            .enumerate()
+            .map(|(i, _)| i as i64 * interval + start_at)
+            .collect()
     }
 
     pub fn width(&self) -> u32 {
@@ -188,6 +195,7 @@ impl VidInfo {
         let mut frame = Video::empty();
         // Done to prevent a borrow of self
         let video_stream_idx = self.video_stream_idx;
+        let vid_path = self.path.clone();
         self.input
             .packets()
             .filter_map(|(s, p)| {
@@ -198,7 +206,18 @@ impl VidInfo {
                 }
             })
             .take_while(|packet| {
-                decoder.send_packet(packet).unwrap();
+                if let Err(error) = decoder.send_packet(packet) {
+                    log::error!(
+                        "File {} failed. Error: {}",
+                        vid_path.to_str().unwrap(),
+                        error
+                    );
+                    panic!(
+                        "File {} failed. Error: {}",
+                        vid_path.to_str().unwrap(),
+                        error
+                    );
+                }
                 decoder.receive_frame(&mut frame).is_err()
             })
             .last();

@@ -7,7 +7,10 @@ use itertools::Itertools as _;
 use std::{fs::DirBuilder, path::PathBuf};
 
 use crate::{
-    files::get_file_stem, opts::Opts, util::envvar_to_bool, util::Dimensions, video::VidInfo,
+    files::get_file_stem,
+    opts::Opts,
+    util::{envvar_to_bool, sync_mtimes, Dimensions},
+    video::VidInfo,
 };
 
 #[derive(Derivative)]
@@ -84,22 +87,22 @@ pub fn generate(pbar: &ProgressBar, opts: &Opts, path: PathBuf) -> Result<()> {
         .iter()
         .map(|ts| ScreenCap::new(*ts, &mut info).unwrap())
         .enumerate()
-        .inspect(|_| pbar.inc(1))
-        .chunks(opts.rows as usize);
-    for chunk in &captures {
-        for (idx, capture) in chunk {
-            imageops::replace(&mut img, &capture.thumbnail(), current_x, current_y);
-            if save_individual_imgs {
-                save_individual_img(opts, &capture, &path, idx)?;
-            }
-            current_x += cap_width + 2;
+        .inspect(|_| pbar.inc(1));
+    for (idx, capture) in captures.into_iter() {
+        imageops::replace(&mut img, &capture.thumbnail(), current_x, current_y);
+        if save_individual_imgs {
+            save_individual_img(opts, &capture, &path, idx)?;
         }
-        current_y += cap_height + 2;
-        current_x = 1;
+        current_x += cap_width + 2;
+        if idx != 0 && idx as u32 % opts.columns == 0 {
+            current_y += cap_height + 2;
+            current_x = 1;
+        }
     }
     let mut out_path = opts.out_dir.clone();
     out_path.push(info.img_file_name());
-    img.save_with_format(out_path, ImageFormat::Jpeg)?;
-    pbar.finish();
+    img.save_with_format(out_path.clone(), ImageFormat::Jpeg)?;
+    sync_mtimes(path, out_path)?;
+    pbar.finish_and_clear();
     Ok(())
 }

@@ -35,10 +35,10 @@ pub struct Opts {
     pub width: u32,
     #[structopt(short, long)]
     pub verbose: bool,
-    #[structopt(short, long, default_value = "25")]
+    #[structopt(short, long, default_value = "8")]
     //#[structopt(short, long, default_value = "3")]
     pub columns: u32,
-    #[structopt(short, long, default_value = "8")]
+    #[structopt(short, long, default_value = "25")]
     //#[structopt(short, long, default_value = "3")]
     pub rows: u32,
     #[structopt(short, long,
@@ -48,6 +48,8 @@ pub struct Opts {
     )]
     //TODO Validate value.
     pub skip: f64,
+    #[structopt(long, help = "Fixes the modified time of any existing screens files.")]
+    pub fix_times: bool,
     #[structopt(short, long, default_value = "screens")]
     pub out_dir: PathBuf,
     #[structopt(name = "FILE_OR_DIR", default_value = ".", multiple = true)]

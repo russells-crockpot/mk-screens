@@ -1,6 +1,7 @@
+use filetime::{set_file_mtime, FileTime};
 use std::{
     collections::HashMap,
-    fs::{read_dir, remove_file, File},
+    fs::{self, read_dir, remove_file, File},
     iter,
     path::{Path, PathBuf},
     time::SystemTime,
@@ -8,7 +9,7 @@ use std::{
 
 use anyhow::Result;
 
-use crate::opts::Opts;
+use crate::{opts::Opts, util::sync_mtimes};
 
 pub fn get_filename<P: AsRef<Path>>(path: &P) -> &str {
     path.as_ref().file_name().unwrap().to_str().unwrap()
@@ -18,7 +19,7 @@ pub fn get_file_stem<P: AsRef<Path>>(path: &P) -> &str {
     path.as_ref().file_stem().unwrap().to_str().unwrap()
 }
 
-//TODO Add mim check
+//TODO Add mime check
 pub fn img_file_name<P: AsRef<Path>>(path: &P) -> String {
     format!("{}.jpg", get_filename(path))
 }
@@ -83,7 +84,18 @@ impl FileInfo {
     }
 
     fn modified_time<P: AsRef<Path>>(path: P) -> Result<SystemTime> {
-        Ok(File::open(path)?.metadata()?.modified()?)
+        Ok(fs::metadata(path)?.modified()?)
+    }
+
+    pub fn sync_mtimes(&self) -> Result<bool> {
+        if self.video.is_none() || self.screens.is_none() {
+            Ok(false)
+        } else {
+            Ok(sync_mtimes(
+                self.video.as_ref().unwrap(),
+                self.screens.as_ref().unwrap(),
+            )?)
+        }
     }
 
     pub fn screens(&self) -> Option<&PathBuf> {
@@ -155,6 +167,16 @@ impl<'a> FileInfoMap<'a> {
     pub fn remove(&mut self, file_name: &str) {
         self.map.remove(file_name);
     }
+
+    pub fn fix_times(&self) -> Result<usize> {
+        let mut num_fixed = 0;
+        for finfo in self.map.values() {
+            if finfo.sync_mtimes()? {
+                num_fixed += 1;
+            }
+        }
+        Ok(num_fixed)
+    }
 }
 
 pub fn mime_filter(mime_type: &'static mime::Name<'static>) -> Box<dyn Fn(&PathBuf) -> bool> {
@@ -210,6 +232,11 @@ pub fn get_video_files_to_process(opts: &Opts) -> Result<Vec<PathBuf>> {
                 }
             }
         }
+    }
+    if opts.fix_times {
+        log::info!("Fixing modified times...");
+        let num_fixed = files.fix_times()?;
+        log::info!("Fixed modified time for {} file(s).", num_fixed);
     }
     Ok(files.get_videos_to_process())
 }

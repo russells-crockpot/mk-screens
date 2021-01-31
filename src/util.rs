@@ -1,6 +1,9 @@
+use filetime::{set_file_mtime, FileTime};
 use std::{
     env,
     fmt::{self, Display, Formatter},
+    fs,
+    path::Path,
     str::FromStr as _,
 };
 
@@ -43,4 +46,19 @@ pub fn envvar_to_bool(varname: &str) -> bool {
         Err(_) => false,
         Ok(v) => usize::from_str(&v).unwrap() != 0,
     }
+}
+
+pub fn sync_mtimes<S, T>(source_file: S, target_file: T) -> anyhow::Result<bool>
+where
+    S: AsRef<Path>,
+    T: AsRef<Path>,
+{
+    let source_mtime = fs::metadata(source_file)?.modified()?;
+    let target_mtime = fs::metadata(&target_file)?.modified()?;
+    if source_mtime == target_mtime {
+        return Ok(false);
+    }
+    let modified_time = FileTime::from_system_time(source_mtime);
+    set_file_mtime(target_file, modified_time)?;
+    Ok(true)
 }
