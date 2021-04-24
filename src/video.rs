@@ -1,4 +1,7 @@
-use std::{iter::repeat, path::PathBuf};
+use std::{
+    iter::repeat,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Error as AnyhowError, Result};
 use derivative::Derivative;
@@ -7,10 +10,6 @@ use ffmpeg::{
     filter::{self, Graph},
     format::{context::Input, stream::Stream, Pixel as PixelFormat},
     media::Type as MediaType,
-    software::{
-        scaler,
-        scaling::{context::Context as ScalingContext, flag::Flags as ScalingFlags},
-    },
     util::frame::video::Video,
     Rational,
 };
@@ -90,19 +89,15 @@ fn create_filter_graph(
     Ok(graph)
 }
 
-pub struct FrameInfo {
-    dimensions: Dimensions,
-    crop_to: Dimensions,
-}
-
 #[derive(Derivative)]
 #[derivative(Debug)]
+/// Contains relevant information about a video file.
 pub struct VidInfo {
-    pub path: PathBuf,
+    path: PathBuf,
     duration: i64,
-    pub pixel_format: PixelFormat,
+    pixel_format: PixelFormat,
     dimensions: Dimensions,
-    pub capture_dimensions: Dimensions,
+    capture_dimensions: Dimensions,
     interval: i64,
     video_stream_idx: usize,
     #[derivative(Debug = "ignore")]
@@ -114,16 +109,16 @@ pub struct VidInfo {
 }
 
 impl VidInfo {
-    pub fn new(opts: &Opts, path: PathBuf) -> Result<Self> {
+    pub fn new(opts: &Opts, path: &Path) -> Result<Self> {
         let input = ffmpeg::format::input(&path)?;
         let stream = if let Some(stream) = input.streams().best(MediaType::Video) {
             stream
         } else {
-            return Err(AnyhowError::from(Error::NoVideoStream(path)));
+            return Err(AnyhowError::from(Error::NoVideoStream(path.into())));
         };
         let decoder = match stream.codec().decoder().video() {
             Ok(v) => v,
-            Err(e) => return Err(AnyhowError::from(Error::CorruptVideoStream(path, e))),
+            Err(e) => return Err(AnyhowError::from(Error::CorruptVideoStream(path.into(), e))),
         };
         let duration = stream.duration();
         let dimensions = Dimensions::new(decoder.width(), decoder.height());
@@ -136,7 +131,7 @@ impl VidInfo {
         let capture_dimensions = Dimensions::new(capture_width, capture_height as u32);
         let filter = create_filter_graph(&decoder, &stream, &capture_dimensions)?;
         Ok(Self {
-            path,
+            path: path.into(),
             duration,
             pixel_format: decoder.format(),
             dimensions,
@@ -159,6 +154,18 @@ impl VidInfo {
             .enumerate()
             .map(|(i, _)| i as i64 * interval + start_at)
             .collect()
+    }
+
+    pub fn path(&self) -> &PathBuf {
+        &self.path
+    }
+
+    pub fn pixel_format(&self) -> PixelFormat {
+        self.pixel_format
+    }
+
+    pub fn capture_dimensions(&self) -> &Dimensions {
+        &self.capture_dimensions
     }
 
     pub fn width(&self) -> u32 {
@@ -195,7 +202,6 @@ impl VidInfo {
         let mut frame = Video::empty();
         // Done to prevent a borrow of self
         let video_stream_idx = self.video_stream_idx;
-        let vid_path = self.path.clone();
         self.input
             .packets()
             .filter_map(|(s, p)| {
@@ -206,7 +212,7 @@ impl VidInfo {
                 }
             })
             .take_while(|packet| {
-                if let Err(error) = decoder.send_packet(packet) {
+                if decoder.send_packet(packet).is_err() {
                     return true;
                 }
                 decoder.receive_frame(&mut frame).is_err()

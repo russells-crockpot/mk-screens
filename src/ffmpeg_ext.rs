@@ -1,3 +1,4 @@
+//! Reexports of extensions to the ffmpeg-next package.
 pub mod seek;
 pub use seek::Flags as SeekFlags;
 pub use seek::FrameSeekable;

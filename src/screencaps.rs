@@ -3,11 +3,7 @@ use derivative::Derivative;
 use ffmpeg::format::Pixel;
 use image::{imageops, ImageFormat, RgbImage};
 use indicatif::ProgressBar;
-use itertools::Itertools as _;
-use std::{
-    fs::DirBuilder,
-    path::{Path, PathBuf},
-};
+use std::{fs::DirBuilder, path::Path};
 
 use crate::{
     files::get_file_stem,
@@ -32,8 +28,8 @@ impl ScreenCap {
         let img = RgbImage::from_raw(dimensions.width(), dimensions.height(), frame_data).unwrap();
         Ok(Self {
             time: ts,
-            dimensions: info.capture_dimensions.clone(),
-            pixel_format: info.pixel_format,
+            dimensions: info.capture_dimensions().clone(),
+            pixel_format: info.pixel_format(),
             image: img,
         })
     }
@@ -49,8 +45,7 @@ impl ScreenCap {
         imageops::thumbnail(&self.image, self.width(), self.height())
     }
 
-    pub fn save_file(&self, path: PathBuf) -> Result<()> {
-        println!("path: {:?}", path.to_str());
+    pub fn save_file(&self, path: &Path) -> Result<()> {
         log::debug!("Saving to file {}", path.to_str().unwrap());
         self.image.save_with_format(path, ImageFormat::Jpeg)?;
         Ok(())
@@ -72,45 +67,18 @@ fn save_individual_img(opts: &Opts, cap: &ScreenCap, vidfile: &Path, idx: usize)
         vidfile.file_stem().unwrap().to_str().unwrap(),
         idx
     ));
-    cap.save_file(out_path)?;
+    cap.save_file(&out_path)?;
     Ok(())
 }
 
-pub struct ScreenGenerator<'a, 'b> {
-    info: VidInfo,
-    pbar: &'a ProgressBar,
-    opts: &'b Opts,
-    path: PathBuf,
-    failed: bool,
-}
-
-impl<'a, 'b> ScreenGenerator<'a, 'b> {
-    pub fn new(pbar: &'a ProgressBar, opts: &'b Opts, path: PathBuf) -> Result<Self> {
-        pbar.set_message(get_file_stem(&path));
-        let mut info = VidInfo::new(opts, path.clone())?;
-        pbar.inc(1);
-        Ok(Self {
-            info,
-            pbar,
-            opts,
-            path,
-            failed: false,
-        })
-    }
-
-    pub fn get_screen_cap(&mut self, timestamp: i64) -> Result<ScreenCap> {
-        ScreenCap::new(timestamp, &mut self.info)
-    }
-}
-
-pub fn generate(pbar: &ProgressBar, opts: &Opts, path: PathBuf) -> Result<()> {
+pub fn generate(pbar: &ProgressBar, opts: &Opts, path: &Path) -> Result<()> {
     //log::info!("Generating screens for {}", get_filename(&path));
     pbar.set_message(get_file_stem(&path));
-    let mut info = VidInfo::new(opts, path.clone())?;
+    let mut info = VidInfo::new(opts, &path)?;
     pbar.inc(1);
     let save_individual_imgs = envvar_to_bool("SAVE_INDIVIDUAL_CAPTURES");
     let times = info.capture_times.clone();
-    let Dimensions(cap_width, cap_height) = info.capture_dimensions;
+    let Dimensions(cap_width, cap_height) = info.capture_dimensions().clone();
     let mut img = RgbImage::new(cap_width * opts.columns, (cap_height + 2) * opts.rows);
     let mut current_x = 1;
     let mut current_y = 1;
