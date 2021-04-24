@@ -53,7 +53,7 @@ fn rayon_process_videos(opts: &opts::Opts, mut video_files: Vec<PathBuf>) -> Res
     } else {
         MultiProgress::new()
     };
-    //mp.set_move_cursor(true);
+    mp.set_move_cursor(false);
     let pstyle = ProgressStyle::default_bar()
         .template("[{eta:>5}] {bar:.cyan/blue} {percent:3}% | {wide_msg}");
     let create_pbar = || {
@@ -76,7 +76,7 @@ fn rayon_process_videos(opts: &opts::Opts, mut video_files: Vec<PathBuf>) -> Res
                 .for_each(|(path, pbar)| process_video(pbar, &opts, path.clone()));
         }
     });
-    mp.join_and_clear()?;
+    mp.join()?;
     Ok(())
 }
 

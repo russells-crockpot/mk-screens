@@ -58,7 +58,7 @@ pub struct Opts {
 
 impl Opts {
     pub fn num_captures(&self) -> u32 {
-        self.columns * self.rows
+        (self.columns * self.rows) + 1
     }
 }
 
@@ -71,5 +71,18 @@ impl Default for Opts {
             set_var("RUST_LOG", "mk_screens=info");
         }
         opts
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_skip() {
+        assert!(matches!(parse_skip("5"), Ok(x) if (x - 0.05).abs() < f64::EPSILON));
+        assert!(matches!(parse_skip("05"), Ok(x) if (x - 0.05).abs() < f64::EPSILON));
+        assert!(matches!(parse_skip("25"), Ok(x) if (x - 0.25).abs() < f64::EPSILON));
+        assert!(matches!(parse_skip("100"), Ok(x) if (x - 1.0).abs() < f64::EPSILON));
     }
 }

@@ -19,7 +19,7 @@ pub fn get_file_stem<P: AsRef<Path>>(path: &P) -> &str {
     path.as_ref().file_stem().unwrap().to_str().unwrap()
 }
 
-//TODO Add mime check
+//TODO Add ability so change output type
 pub fn img_file_name<P: AsRef<Path>>(path: &P) -> String {
     format!("{}.jpg", get_filename(path))
 }
@@ -30,11 +30,11 @@ struct FileInfo {
 }
 
 impl FileInfo {
-    pub fn for_video(opts: &Opts, path: &PathBuf) -> Self {
+    pub fn for_video(opts: &Opts, path: &Path) -> Self {
         let mut screens_path = opts.out_dir.clone();
         screens_path.push(img_file_name(&path));
         Self {
-            video: Some(path.clone()),
+            video: Some(path.into()),
             screens: if screens_path.exists() && !opts.force {
                 Some(screens_path)
             } else {
@@ -43,9 +43,9 @@ impl FileInfo {
         }
     }
 
-    pub fn for_screens(video_files: &[PathBuf], path: &PathBuf) -> Self {
+    pub fn for_screens(video_files: &[PathBuf], path: &Path) -> Self {
         Self {
-            screens: Some(path.clone()),
+            screens: Some(path.into()),
             video: Self::find_video_file(video_files, path),
         }
     }
@@ -73,7 +73,7 @@ impl FileInfo {
                     > Self::modified_time(self.screens.clone().unwrap())?))
     }
 
-    fn find_video_file(video_files: &[PathBuf], path: &PathBuf) -> Option<PathBuf> {
+    fn find_video_file(video_files: &[PathBuf], path: &Path) -> Option<PathBuf> {
         let stem = get_file_stem(&path);
         for vid in video_files {
             if get_filename(vid) == stem {
@@ -192,6 +192,7 @@ pub fn mime_filter(mime_type: &'static mime::Name<'static>) -> Box<dyn Fn(&PathB
 
 pub fn get_video_files_to_process(opts: &Opts) -> Result<Vec<PathBuf>> {
     let mut files = FileInfoMap::new(opts);
+    let video_filter = mime_filter(&mime::VIDEO);
     let video_files: Vec<PathBuf> = opts
         .input
         .iter()
@@ -208,7 +209,7 @@ pub fn get_video_files_to_process(opts: &Opts) -> Result<Vec<PathBuf>> {
         .flatten()
         .filter(|p| p.exists())
         .map(PathBuf::from)
-        .filter(mime_filter(&mime::VIDEO))
+        .filter(&video_filter)
         .collect();
     video_files
         .iter()
@@ -216,7 +217,7 @@ pub fn get_video_files_to_process(opts: &Opts) -> Result<Vec<PathBuf>> {
     read_dir(opts.out_dir.as_path())?
         .map(|f| f.unwrap().path())
         .filter(|p| p.exists())
-        .filter(mime_filter(&mime::IMAGE))
+        .filter(&video_filter)
         .for_each(|p| files.add_screens_file(p, &video_files));
     if !opts.keep_files {
         let to_delete = files.get_screens_to_delete();
@@ -239,4 +240,49 @@ pub fn get_video_files_to_process(opts: &Opts) -> Result<Vec<PathBuf>> {
         log::info!("Fixed modified time for {} file(s).", num_fixed);
     }
     Ok(files.get_videos_to_process())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_img_file_name() {
+        assert_eq!(
+            img_file_name(&PathBuf::from("./test/test1.txt")),
+            "test1.txt.jpg"
+        );
+        assert_eq!(img_file_name(&PathBuf::from("test1.txt")), "test1.txt.jpg");
+        assert_eq!(
+            img_file_name(&PathBuf::from("/test/test1.txt")),
+            "test1.txt.jpg"
+        );
+    }
+
+    #[test]
+    fn test_mime_filter() {
+        let text_filter = mime_filter(&mime::TEXT);
+        let test_vec_1 = vec!["file1.txt", "file2.html", "file3.txt"];
+        let results_1 = test_vec_1
+            .iter()
+            .map(PathBuf::from)
+            .filter(&text_filter)
+            .count();
+        assert_eq!(results_1, 3);
+        let test_vec_2 = vec!["file1.mp3", "file2.mp4", "file3.exe"];
+        let results_2 = test_vec_2
+            .iter()
+            .map(PathBuf::from)
+            .filter(&text_filter)
+            .count();
+        assert_eq!(results_2, 0);
+        let test_vec_3 = vec!["file1.mp3", "file2.txt", "file3.exe"];
+        let results_3 = test_vec_3
+            .iter()
+            .map(PathBuf::from)
+            .filter(&text_filter)
+            .count();
+        assert_eq!(results_3, 1);
+    }
 }

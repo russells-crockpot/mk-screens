@@ -44,7 +44,13 @@ impl PartialEq for Dimensions {
 pub fn envvar_to_bool(varname: &str) -> bool {
     match env::var(varname) {
         Err(_) => false,
-        Ok(v) => usize::from_str(&v).unwrap() != 0,
+        Ok(v) => {
+            if let Ok(n) = usize::from_str(&v) {
+                n != 0
+            } else {
+                false
+            }
+        }
     }
 }
 
@@ -61,4 +67,24 @@ where
     let modified_time = FileTime::from_system_time(source_mtime);
     set_file_mtime(target_file, modified_time)?;
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::env::set_var;
+
+    #[test]
+    fn test_envvar_to_bool() {
+        set_var("MK_SCREENS_TEST_VAR", "1");
+        assert_eq!(envvar_to_bool("MK_SCREENS_TEST_VAR"), true);
+        set_var("MK_SCREENS_TEST_VAR", "2");
+        assert_eq!(envvar_to_bool("MK_SCREENS_TEST_VAR"), true);
+        set_var("MK_SCREENS_TEST_VAR", "0");
+        assert_eq!(envvar_to_bool("MK_SCREENS_TEST_VAR"), false);
+        set_var("MK_SCREENS_TEST_VAR", "");
+        assert_eq!(envvar_to_bool("MK_SCREENS_TEST_VAR"), false);
+        set_var("MK_SCREENS_TEST_VAR", "bad-input");
+        assert_eq!(envvar_to_bool("MK_SCREENS_TEST_VAR"), false);
+    }
 }

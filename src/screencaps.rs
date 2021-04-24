@@ -4,7 +4,10 @@ use ffmpeg::format::Pixel;
 use image::{imageops, ImageFormat, RgbImage};
 use indicatif::ProgressBar;
 use itertools::Itertools as _;
-use std::{fs::DirBuilder, path::PathBuf};
+use std::{
+    fs::DirBuilder,
+    path::{Path, PathBuf},
+};
 
 use crate::{
     files::get_file_stem,
@@ -47,13 +50,14 @@ impl ScreenCap {
     }
 
     pub fn save_file(&self, path: PathBuf) -> Result<()> {
+        println!("path: {:?}", path.to_str());
         log::debug!("Saving to file {}", path.to_str().unwrap());
         self.image.save_with_format(path, ImageFormat::Jpeg)?;
         Ok(())
     }
 }
 
-fn save_individual_img(opts: &Opts, cap: &ScreenCap, vidfile: &PathBuf, idx: usize) -> Result<()> {
+fn save_individual_img(opts: &Opts, cap: &ScreenCap, vidfile: &Path, idx: usize) -> Result<()> {
     let mut out_path = opts.out_dir.clone();
     if envvar_to_bool("DIR_FOR_EACH_INDIVIDUAL_CAPTURES") {
         out_path.push(vidfile.file_stem().unwrap());
@@ -72,6 +76,33 @@ fn save_individual_img(opts: &Opts, cap: &ScreenCap, vidfile: &PathBuf, idx: usi
     Ok(())
 }
 
+pub struct ScreenGenerator<'a, 'b> {
+    info: VidInfo,
+    pbar: &'a ProgressBar,
+    opts: &'b Opts,
+    path: PathBuf,
+    failed: bool,
+}
+
+impl<'a, 'b> ScreenGenerator<'a, 'b> {
+    pub fn new(pbar: &'a ProgressBar, opts: &'b Opts, path: PathBuf) -> Result<Self> {
+        pbar.set_message(get_file_stem(&path));
+        let mut info = VidInfo::new(opts, path.clone())?;
+        pbar.inc(1);
+        Ok(Self {
+            info,
+            pbar,
+            opts,
+            path,
+            failed: false,
+        })
+    }
+
+    pub fn get_screen_cap(&mut self, timestamp: i64) -> Result<ScreenCap> {
+        ScreenCap::new(timestamp, &mut self.info)
+    }
+}
+
 pub fn generate(pbar: &ProgressBar, opts: &Opts, path: PathBuf) -> Result<()> {
     //log::info!("Generating screens for {}", get_filename(&path));
     pbar.set_message(get_file_stem(&path));
@@ -85,10 +116,11 @@ pub fn generate(pbar: &ProgressBar, opts: &Opts, path: PathBuf) -> Result<()> {
     let mut current_y = 1;
     let captures = times
         .iter()
-        .map(|ts| ScreenCap::new(*ts, &mut info).unwrap())
+        .map(|ts| ScreenCap::new(*ts, &mut info))
         .enumerate()
         .inspect(|_| pbar.inc(1));
-    for (idx, capture) in captures.into_iter() {
+    for (idx, maybe_capture) in captures.into_iter() {
+        let capture = maybe_capture?;
         imageops::replace(&mut img, &capture.thumbnail(), current_x, current_y);
         if save_individual_imgs {
             save_individual_img(opts, &capture, &path, idx)?;

@@ -168,7 +168,7 @@ impl VidInfo {
         self.dimensions.height()
     }
 
-    pub fn stream<'a>(&'a self) -> Result<Stream<'a>> {
+    pub fn stream(&self) -> Result<Stream<'_>> {
         if let Some(stream) = self.input.streams().best(MediaType::Video) {
             Ok(stream)
         } else {
@@ -207,16 +207,7 @@ impl VidInfo {
             })
             .take_while(|packet| {
                 if let Err(error) = decoder.send_packet(packet) {
-                    log::error!(
-                        "File {} failed. Error: {}",
-                        vid_path.to_str().unwrap(),
-                        error
-                    );
-                    panic!(
-                        "File {} failed. Error: {}",
-                        vid_path.to_str().unwrap(),
-                        error
-                    );
+                    return true;
                 }
                 decoder.receive_frame(&mut frame).is_err()
             })
