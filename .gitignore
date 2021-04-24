@@ -24,3 +24,5 @@ t[0-9]
 t.*
 t[0-9].*
 *.swp
+/flamegraph.svg
+/perf.data
