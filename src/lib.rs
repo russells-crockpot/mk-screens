@@ -20,6 +20,7 @@ pub mod util;
 pub mod video;
 
 #[derive(Debug, ThisError)]
+/// Various errors used by `mk-screens`.
 pub enum Error {
     #[error("File {0} has no video stream.")]
     NoVideoStream(PathBuf),
@@ -35,7 +36,7 @@ fn error_style() -> ProgressStyle {
         .progress_chars("███")
 }
 
-pub fn process_video(pbar: &ProgressBar, opts: &opts::Opts, path: &Path) {
+fn process_video(pbar: &ProgressBar, opts: &opts::Opts, path: &Path) {
     if !path.exists() {
         pbar.set_style(error_style());
         pbar.abandon_with_message(&format!("File {} does not exist.", path.to_str().unwrap()))
@@ -83,6 +84,7 @@ fn rayon_process_videos(opts: &opts::Opts, mut video_files: Vec<PathBuf>) -> Res
     Ok(())
 }
 
+/// Run `mk-screens` using the provided options.
 pub fn run(opts: &opts::Opts) -> Result<()> {
     ffmpeg::init()?;
     if !opts.out_dir.exists() {

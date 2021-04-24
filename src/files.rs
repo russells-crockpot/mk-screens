@@ -124,8 +124,8 @@ impl<'a> FileInfoMap<'a> {
         }
     }
 
-    /// Adds a video file
-    pub fn add_video_file(&mut self, path: &Path) {
+    /// Adds a video file to the map.
+    pub fn add_video(&mut self, path: &Path) {
         match self.map.get_mut(get_filename(&path)) {
             Some(info) => {
                 info.with_video(path);
@@ -139,7 +139,7 @@ impl<'a> FileInfoMap<'a> {
         }
     }
 
-    pub fn add_screens_file(&mut self, path: &Path, video_files: &[PathBuf]) {
+    pub fn add_screencap(&mut self, path: &Path, video_files: &[PathBuf]) {
         match self.map.get_mut(get_file_stem(&path)) {
             Some(info) => {
                 info.with_screens(self.opts, path);
@@ -185,6 +185,8 @@ impl<'a> FileInfoMap<'a> {
     }
 }
 
+/// Creates a closure that will filter out any files whose MIME type is not the specified type.
+/// Useful for using with an iterator's `.filter()` method.
 pub fn mime_filter(mime_type: &'static mime::Name<'static>) -> Box<dyn Fn(&PathBuf) -> bool> {
     let mime_type = *mime_type;
     Box::new(move |path| {
@@ -196,6 +198,11 @@ pub fn mime_filter(mime_type: &'static mime::Name<'static>) -> Box<dyn Fn(&PathB
     })
 }
 
+/// Gets a list of video files to process. A video file should be processed if:
+/// 1. It has the MIME type of `video/*`.
+/// 2. It doesn't already have a screencap file for it.
+/// 3. If it does have a screencap file for it, then the video file must have been modified more
+///    recently than the screencap file.
 pub fn get_video_files_to_process(opts: &Opts) -> Result<Vec<PathBuf>> {
     let mut files = FileInfoMap::new(opts);
     let video_filter = mime_filter(&mime::VIDEO);
@@ -217,12 +224,12 @@ pub fn get_video_files_to_process(opts: &Opts) -> Result<Vec<PathBuf>> {
         .map(PathBuf::from)
         .filter(&video_filter)
         .collect();
-    video_files.iter().for_each(|p| files.add_video_file(p));
+    video_files.iter().for_each(|p| files.add_video(p));
     read_dir(opts.out_dir.as_path())?
         .map(|f| f.unwrap().path())
         .filter(|p| p.exists())
         .filter(&video_filter)
-        .for_each(|p| files.add_screens_file(&p, &video_files));
+        .for_each(|p| files.add_screencap(&p, &video_files));
     if !opts.keep_files {
         let to_delete = files.get_screens_to_delete();
         if !to_delete.is_empty() {

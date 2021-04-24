@@ -1,3 +1,5 @@
+//! Various utilities and helpers.
+
 use filetime::{set_file_mtime, FileTime};
 use std::{
     env,
@@ -41,6 +43,8 @@ impl PartialEq for Dimensions {
     }
 }
 
+/// Gets the value of the provided environment variable name and converts it to a boolean value. A
+/// environment variable's value is considered `true` if it's value is a positive, non-zero integer.
 pub fn envvar_to_bool(varname: &str) -> bool {
     match env::var(varname) {
         Err(_) => false,
@@ -54,6 +58,8 @@ pub fn envvar_to_bool(varname: &str) -> bool {
     }
 }
 
+/// Changes the last modified time of `target_file` to be the same as the last modified time of
+/// `source_file`.
 pub fn sync_mtimes<S, T>(source_file: S, target_file: T) -> anyhow::Result<bool>
 where
     S: AsRef<Path>,

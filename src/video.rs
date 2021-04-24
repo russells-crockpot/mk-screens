@@ -1,3 +1,5 @@
+//! Items relating to video files.
+
 use std::{
     iter::repeat,
     path::{Path, PathBuf},
@@ -103,8 +105,6 @@ pub struct VidInfo {
     #[derivative(Debug = "ignore")]
     input: Input,
     #[derivative(Debug = "ignore")]
-    pub capture_times: Vec<i64>,
-    #[derivative(Debug = "ignore")]
     filter: Graph,
 }
 
@@ -139,16 +139,16 @@ impl VidInfo {
             video_stream_idx: stream.index(),
             interval: stream.frames() / opts.num_captures() as i64,
             input,
-            capture_times: Self::generate_capture_times(opts, duration),
             filter,
         })
     }
 
-    fn generate_capture_times(opts: &Opts, duration: i64) -> Vec<i64> {
-        let start_at = (duration as f64 * opts.skip) as i64;
-        let back_trim = (duration as f64 * BACK_TRIM_AMOUNT) as i64;
+    /// Generates a list of timestamps where individual frames should be captured.
+    pub fn generate_capture_times(&self, opts: &Opts) -> Vec<i64> {
+        let start_at = (self.duration as f64 * opts.skip) as i64;
+        let back_trim = (self.duration as f64 * BACK_TRIM_AMOUNT) as i64;
         let interval =
-            ((duration - start_at - back_trim) as f64 / opts.num_captures() as f64) as i64;
+            ((self.duration - start_at - back_trim) as f64 / opts.num_captures() as f64) as i64;
         repeat(true)
             .take(opts.num_captures() as usize)
             .enumerate()
@@ -156,10 +156,12 @@ impl VidInfo {
             .collect()
     }
 
+    /// The path to the original video file.
     pub fn path(&self) -> &PathBuf {
         &self.path
     }
 
+    /// The pixel format of the original video file.
     pub fn pixel_format(&self) -> PixelFormat {
         self.pixel_format
     }
@@ -171,10 +173,12 @@ impl VidInfo {
     pub fn width(&self) -> u32 {
         self.dimensions.width()
     }
+
     pub fn height(&self) -> u32 {
         self.dimensions.height()
     }
 
+    /// Returns the video stream for the underlying video file.
     pub fn stream(&self) -> Result<Stream<'_>> {
         if let Some(stream) = self.input.streams().best(MediaType::Video) {
             Ok(stream)
@@ -187,7 +191,7 @@ impl VidInfo {
         img_file_name(&self.path)
     }
 
-    pub fn create_decoder(&self) -> Result<VideoDecoder> {
+    fn create_decoder(&self) -> Result<VideoDecoder> {
         Ok(self.stream()?.codec().decoder().video()?)
     }
 
@@ -195,10 +199,11 @@ impl VidInfo {
         Dimensions((frame.stride(0) / 3) as u32, frame.height())
     }
 
-    pub fn get_frame_at(&mut self, ts: i64) -> Result<(Dimensions, Vec<u8>)> {
+    /// Gets the frame image at (or near) the provided timestamp.
+    pub fn get_frame_at(&mut self, timestamp: i64) -> Result<(Dimensions, Vec<u8>)> {
         let mut decoder = self.create_decoder()?;
         self.input
-            .seek_to_frame(self.video_stream_idx as i32, ts, SeekFlags::ANY)?;
+            .seek_to_frame(self.video_stream_idx as i32, timestamp, SeekFlags::ANY)?;
         let mut frame = Video::empty();
         // Done to prevent a borrow of self
         let video_stream_idx = self.video_stream_idx;

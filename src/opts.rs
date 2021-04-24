@@ -1,3 +1,4 @@
+//! Contains command line options to be passed to mk-screens.
 use std::{
     env::{set_var, var_os as get_var},
     num::ParseFloatError,
@@ -18,6 +19,7 @@ fn parse_skip(src: &str) -> Result<f64, ParseFloatError> {
     author=env!("CARGO_PKG_AUTHORS"),
     about=env!("CARGO_PKG_DESCRIPTION")
 )]
+/// Command line options to be passed to mk-screens.
 pub struct Opts {
     #[structopt(short = "k", long)]
     pub keep_files: bool,
