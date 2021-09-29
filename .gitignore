@@ -13,7 +13,8 @@ Cargo.lock
 sandbox.*
 sandbox/
 *.log
-ignore
+ignore/
+.env
 *.mkv
 *.mp4
 *.jpg

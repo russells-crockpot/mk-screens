@@ -9,7 +9,7 @@ use std::{fs::DirBuilder, path::Path};
 
 use crate::{
     files::{get_file_stem, get_filename},
-    opts::Opts,
+    settings::Settings,
     util::{envvar_to_bool, sync_mtimes, Dimensions},
     video::VidInfo,
 };
@@ -69,14 +69,19 @@ impl ScreenCap {
     }
 }
 
-fn save_individual_img(opts: &Opts, cap: &ScreenCap, vidfile: &Path, idx: usize) -> Result<()> {
-    let mut out_path = opts.out_dir.clone();
+fn save_individual_img(
+    settings: &Settings,
+    cap: &ScreenCap,
+    vidfile: &Path,
+    idx: usize,
+) -> Result<()> {
+    let mut out_path = settings.out_dir().to_path_buf();
     if *DIR_FOR_EACH_CAP {
         out_path.push(vidfile.file_stem().unwrap());
         if !out_path.exists() {
             DirBuilder::new()
                 .recursive(true)
-                .create(opts.out_dir.as_path())?;
+                .create(settings.out_dir())?;
         }
     }
     out_path.push(format!(
@@ -89,14 +94,17 @@ fn save_individual_img(opts: &Opts, cap: &ScreenCap, vidfile: &Path, idx: usize)
 }
 
 /// Generates the screencap for a file and saves it.
-pub fn generate(pbar: &ProgressBar, opts: &Opts, path: &Path) -> Result<()> {
+pub fn generate(pbar: &ProgressBar, settings: &Settings, path: &Path) -> Result<()> {
     log::info!("Generating screens for {}", get_filename(&path));
     pbar.set_message(get_file_stem(&path));
-    let mut info = VidInfo::new(opts, &path)?;
+    let mut info = VidInfo::new(settings, path)?;
     pbar.inc(1);
-    let times = info.generate_capture_times(&opts);
+    let times = info.generate_capture_times(settings);
     let Dimensions(cap_width, cap_height) = info.capture_dimensions().clone();
-    let mut img = RgbImage::new(cap_width * opts.columns, (cap_height + 2) * opts.rows);
+    let mut img = RgbImage::new(
+        cap_width * settings.columns(),
+        (cap_height + 2) * settings.rows(),
+    );
     let mut current_x = 1;
     let mut current_y = 1;
     let captures = times
@@ -108,15 +116,15 @@ pub fn generate(pbar: &ProgressBar, opts: &Opts, path: &Path) -> Result<()> {
         let capture = maybe_capture?;
         imageops::replace(&mut img, &capture.thumbnail(), current_x, current_y);
         if *SAVE_INDIVIDUAL_IMGS {
-            save_individual_img(opts, &capture, &path, idx)?;
+            save_individual_img(settings, &capture, path, idx)?;
         }
         current_x += cap_width + 2;
-        if idx != 0 && idx as u32 % opts.columns == 0 {
+        if idx != 0 && idx as u32 % settings.columns() == 0 {
             current_y += cap_height + 2;
             current_x = 1;
         }
     }
-    let mut out_path = opts.out_dir.clone();
+    let mut out_path = settings.out_dir().to_path_buf();
     out_path.push(info.img_file_name());
     img.save_with_format(out_path.clone(), ImageFormat::Jpeg)?;
     sync_mtimes(path, out_path)?;

@@ -19,7 +19,7 @@ use ffmpeg::{
 use crate::{
     ffmpeg_ext::{FrameSeekable as _, LinkableGraph as _, SeekFlags},
     files::img_file_name,
-    opts::Opts,
+    settings::Settings,
     util::Dimensions,
     Error,
 };
@@ -72,7 +72,7 @@ fn create_filter_graph(
     graph.add(
         &filter::find("format").unwrap(),
         "pix_fmt",
-        &PixelFormat::RGB24.descriptor().unwrap().name(),
+        PixelFormat::RGB24.descriptor().unwrap().name(),
     )?;
     graph.add(&filter::find("drawtext").unwrap(), "btc", &drawtext_args)?;
     graph.add(
@@ -109,7 +109,7 @@ pub struct VidInfo {
 }
 
 impl VidInfo {
-    pub fn new(opts: &Opts, path: &Path) -> Result<Self> {
+    pub fn new(settings: &Settings, path: &Path) -> Result<Self> {
         let input = ffmpeg::format::input(&path)?;
         let stream = if let Some(stream) = input.streams().best(MediaType::Video) {
             stream
@@ -122,8 +122,8 @@ impl VidInfo {
         };
         let duration = stream.duration();
         let dimensions = Dimensions::new(decoder.width(), decoder.height());
-        let mut capture_width = (opts.width - (opts.columns * 4)) / opts.columns;
-        if !opts.scale_up && capture_width > dimensions.width() {
+        let mut capture_width = (settings.width() - (settings.columns() * 4)) / settings.columns();
+        if !settings.scale_up() && capture_width > dimensions.width() {
             capture_width = dimensions.width();
         }
         let capture_height =
@@ -137,20 +137,20 @@ impl VidInfo {
             dimensions,
             capture_dimensions,
             video_stream_idx: stream.index(),
-            interval: stream.frames() / opts.num_captures() as i64,
+            interval: stream.frames() / settings.num_captures() as i64,
             input,
             filter,
         })
     }
 
     /// Generates a list of timestamps where individual frames should be captured.
-    pub fn generate_capture_times(&self, opts: &Opts) -> Vec<i64> {
-        let start_at = (self.duration as f64 * opts.skip) as i64;
+    pub fn generate_capture_times(&self, settings: &Settings) -> Vec<i64> {
+        let start_at = (self.duration as f64 * settings.skip()) as i64;
         let back_trim = (self.duration as f64 * BACK_TRIM_AMOUNT) as i64;
         let interval =
-            ((self.duration - start_at - back_trim) as f64 / opts.num_captures() as f64) as i64;
+            ((self.duration - start_at - back_trim) as f64 / settings.num_captures() as f64) as i64;
         repeat(true)
-            .take(opts.num_captures() as usize)
+            .take(settings.num_captures() as usize)
             .enumerate()
             .map(|(i, _)| i as i64 * interval + start_at)
             .collect()

@@ -9,7 +9,7 @@ use std::{
 
 use anyhow::Result;
 
-use crate::{opts::Opts, util::sync_mtimes};
+use crate::{settings::Settings, util::sync_mtimes};
 
 /// A convenience function to get the file name from a path as a string.
 pub fn get_filename<P: AsRef<Path>>(path: &P) -> &str {
@@ -33,12 +33,12 @@ struct FileInfo {
 }
 
 impl FileInfo {
-    pub fn for_video(opts: &Opts, path: &Path) -> Self {
-        let mut screens_path = opts.out_dir.clone();
+    pub fn for_video(settings: &Settings, path: &Path) -> Self {
+        let mut screens_path = settings.out_dir().to_path_buf();
         screens_path.push(img_file_name(&path));
         Self {
             video: Some(path.into()),
-            screens: if screens_path.exists() && !opts.force {
+            screens: if screens_path.exists() && !settings.force() {
                 Some(screens_path)
             } else {
                 None
@@ -58,8 +58,8 @@ impl FileInfo {
         self
     }
 
-    pub fn with_screens(&mut self, opts: &Opts, path: &Path) -> &mut Self {
-        if !opts.force {
+    pub fn with_screens(&mut self, settings: &Settings, path: &Path) -> &mut Self {
+        if !settings.force() {
             self.screens = Some(path.into());
         }
         self
@@ -112,14 +112,14 @@ impl FileInfo {
 /// A special map that contains information on the video files to (possibly) generate screencaps for
 /// as well as information about any screencps that already exist.
 pub struct FileInfoMap<'a> {
-    opts: &'a Opts,
+    settings: &'a Settings,
     map: HashMap<String, FileInfo>,
 }
 
 impl<'a> FileInfoMap<'a> {
-    pub fn new(opts: &'a Opts) -> Self {
+    pub fn new(settings: &'a Settings) -> Self {
         Self {
-            opts,
+            settings,
             map: HashMap::new(),
         }
     }
@@ -133,7 +133,7 @@ impl<'a> FileInfoMap<'a> {
             None => {
                 self.map.insert(
                     String::from(get_filename(&path)),
-                    FileInfo::for_video(&self.opts, &path),
+                    FileInfo::for_video(self.settings, path),
                 );
             }
         }
@@ -142,12 +142,12 @@ impl<'a> FileInfoMap<'a> {
     pub fn add_screencap(&mut self, path: &Path, video_files: &[PathBuf]) {
         match self.map.get_mut(get_file_stem(&path)) {
             Some(info) => {
-                info.with_screens(self.opts, path);
+                info.with_screens(self.settings, path);
             }
             None => {
                 self.map.insert(
                     String::from(get_filename(&path)),
-                    FileInfo::for_screens(video_files, &path),
+                    FileInfo::for_screens(video_files, path),
                 );
             }
         }
@@ -203,11 +203,11 @@ pub fn mime_filter(mime_type: &'static mime::Name<'static>) -> Box<dyn Fn(&PathB
 /// 2. It doesn't already have a screencap file for it.
 /// 3. If it does have a screencap file for it, then the video file must have been modified more
 ///    recently than the screencap file.
-pub fn get_video_files_to_process(opts: &Opts) -> Result<Vec<PathBuf>> {
-    let mut files = FileInfoMap::new(opts);
+pub fn get_video_files_to_process(settings: &Settings) -> Result<Vec<PathBuf>> {
+    let mut files = FileInfoMap::new(settings);
     let video_filter = mime_filter(&mime::VIDEO);
-    let video_files: Vec<PathBuf> = opts
-        .input
+    let video_files: Vec<PathBuf> = settings
+        .input()
         .iter()
         .map(|p| {
             if p.is_file() {
@@ -225,12 +225,12 @@ pub fn get_video_files_to_process(opts: &Opts) -> Result<Vec<PathBuf>> {
         .filter(&video_filter)
         .collect();
     video_files.iter().for_each(|p| files.add_video(p));
-    read_dir(opts.out_dir.as_path())?
+    read_dir(settings.out_dir())?
         .map(|f| f.unwrap().path())
         .filter(|p| p.exists())
         .filter(&video_filter)
         .for_each(|p| files.add_screencap(&p, &video_files));
-    if !opts.keep_files {
+    if !settings.keep_files() {
         let to_delete = files.get_screens_to_delete();
         if !to_delete.is_empty() {
             log::info!(
@@ -245,7 +245,7 @@ pub fn get_video_files_to_process(opts: &Opts) -> Result<Vec<PathBuf>> {
             }
         }
     }
-    if opts.fix_times {
+    if settings.fix_times() {
         log::info!("Fixing modified times...");
         let num_fixed = files.fix_times()?;
         log::info!("Fixed modified time for {} file(s).", num_fixed);

@@ -5,10 +5,10 @@ use ffmpeg::util::log as ffmpeg_log;
 
 fn main() -> Result<()> {
     dotenv::dotenv().ok();
-    let opts = mk_screens::opts::Opts::default();
+    let settings = mk_screens::settings::Settings::load()?;
+    println!("{:#?}", settings);
     //TODO make configurable?
     ffmpeg_log::set_level(ffmpeg_log::Level::Panic);
     pretty_env_logger::init();
-
-    mk_screens::run(&opts)
+    mk_screens::run(&settings)
 }

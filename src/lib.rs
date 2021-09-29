@@ -14,8 +14,8 @@ use thiserror::Error as ThisError;
 
 pub mod ffmpeg_ext;
 pub mod files;
-pub mod opts;
 pub mod screencaps;
+pub mod settings;
 pub mod util;
 pub mod video;
 
@@ -36,11 +36,11 @@ fn error_style() -> ProgressStyle {
         .progress_chars("███")
 }
 
-fn process_video(pbar: &ProgressBar, opts: &opts::Opts, path: &Path) {
+fn process_video(pbar: &ProgressBar, settings: &settings::Settings, path: &Path) {
     if !path.exists() {
         pbar.set_style(error_style());
         pbar.abandon_with_message(&format!("File {} does not exist.", path.to_str().unwrap()))
-    } else if let Err(error) = screencaps::generate(pbar, opts, &path) {
+    } else if let Err(error) = screencaps::generate(pbar, settings, path) {
         pbar.set_style(error_style());
         pbar.abandon_with_message(&format!(
             "{} failed: {}",
@@ -50,8 +50,11 @@ fn process_video(pbar: &ProgressBar, opts: &opts::Opts, path: &Path) {
     }
 }
 
-fn rayon_process_videos(opts: &opts::Opts, mut video_files: Vec<PathBuf>) -> Result<()> {
-    let opts = opts.clone();
+fn rayon_process_videos(
+    settings: &settings::Settings,
+    mut video_files: Vec<PathBuf>,
+) -> Result<()> {
+    let settings = settings.clone();
     let mp = if util::envvar_to_bool("HIDE_PROGRESS_BARS") {
         MultiProgress::with_draw_target(ProgressDrawTarget::hidden())
     } else {
@@ -61,7 +64,7 @@ fn rayon_process_videos(opts: &opts::Opts, mut video_files: Vec<PathBuf>) -> Res
     let pstyle = ProgressStyle::default_bar()
         .template("[{eta:>5}] {bar:.cyan/blue} {percent:3}% | {wide_msg}");
     let create_pbar = || {
-        let pbar = mp.add(ProgressBar::new((opts.num_captures() + 2) as u64));
+        let pbar = mp.add(ProgressBar::new((settings.num_captures() + 2) as u64));
         pbar.set_style(pstyle.clone());
         Some(pbar)
     };
@@ -70,14 +73,14 @@ fn rayon_process_videos(opts: &opts::Opts, mut video_files: Vec<PathBuf>) -> Res
         .zip(iter::from_fn(create_pbar))
         .collect();
     thread::spawn(move || {
-        if opts.synchronous {
+        if settings.synchronous() {
             items
                 .iter()
-                .for_each(|(path, pbar)| process_video(pbar, &opts, &path));
+                .for_each(|(path, pbar)| process_video(pbar, &settings, path));
         } else {
             items
                 .par_iter()
-                .for_each(|(path, pbar)| process_video(pbar, &opts, &path));
+                .for_each(|(path, pbar)| process_video(pbar, &settings, path));
         }
     });
     mp.join()?;
@@ -85,19 +88,19 @@ fn rayon_process_videos(opts: &opts::Opts, mut video_files: Vec<PathBuf>) -> Res
 }
 
 /// Run `mk-screens` using the provided options.
-pub fn run(opts: &opts::Opts) -> Result<()> {
+pub fn run(settings: &settings::Settings) -> Result<()> {
     ffmpeg::init()?;
-    if !opts.out_dir.exists() {
+    if !settings.out_dir().exists() {
         log::info!(
             "Out directory {} doesn't exist. Creating...",
-            opts.out_dir.to_str().unwrap()
+            settings.out_dir().to_str().unwrap()
         );
         DirBuilder::new()
             .recursive(true)
-            .create(opts.out_dir.as_path())?;
+            .create(settings.out_dir())?;
     }
-    let video_files = files::get_video_files_to_process(opts)?;
-    //process_videos(&opts, video_files)?;
-    rayon_process_videos(&opts, video_files)?;
+    let video_files = files::get_video_files_to_process(settings)?;
+    //process_videos(&settings, video_files)?;
+    rayon_process_videos(settings, video_files)?;
     Ok(())
 }

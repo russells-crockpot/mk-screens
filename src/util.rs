@@ -1,5 +1,3 @@
-//! Various utilities and helpers.
-
 use filetime::{set_file_mtime, FileTime};
 use std::{
     env,
@@ -83,14 +81,14 @@ mod tests {
     #[test]
     fn test_envvar_to_bool() {
         set_var("MK_SCREENS_TEST_VAR", "1");
-        assert_eq!(envvar_to_bool("MK_SCREENS_TEST_VAR"), true);
+        assert!(envvar_to_bool("MK_SCREENS_TEST_VAR"));
         set_var("MK_SCREENS_TEST_VAR", "2");
-        assert_eq!(envvar_to_bool("MK_SCREENS_TEST_VAR"), true);
+        assert!(envvar_to_bool("MK_SCREENS_TEST_VAR"));
         set_var("MK_SCREENS_TEST_VAR", "0");
-        assert_eq!(envvar_to_bool("MK_SCREENS_TEST_VAR"), false);
+        assert!(!envvar_to_bool("MK_SCREENS_TEST_VAR"));
         set_var("MK_SCREENS_TEST_VAR", "");
-        assert_eq!(envvar_to_bool("MK_SCREENS_TEST_VAR"), false);
+        assert!(!envvar_to_bool("MK_SCREENS_TEST_VAR"));
         set_var("MK_SCREENS_TEST_VAR", "bad-input");
-        assert_eq!(envvar_to_bool("MK_SCREENS_TEST_VAR"), false);
+        assert!(!envvar_to_bool("MK_SCREENS_TEST_VAR"));
     }
 }
