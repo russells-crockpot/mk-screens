@@ -1,13 +1,16 @@
 //! Items dealing with files.
 use std::{
+    cell::RefCell,
     collections::HashMap,
     fs::{self, read_dir, remove_file},
+    io::{BufRead as _, BufReader},
     iter,
     path::{Path, PathBuf},
     time::SystemTime,
 };
 
 use anyhow::Result;
+use globset::{Glob, GlobSet, GlobSetBuilder};
 
 use crate::{settings::Settings, util::sync_mtimes};
 
@@ -206,6 +209,7 @@ pub fn mime_filter(mime_type: &'static mime::Name<'static>) -> Box<dyn Fn(&PathB
 pub fn get_video_files_to_process(settings: &Settings) -> Result<Vec<PathBuf>> {
     let mut files = FileInfoMap::new(settings);
     let video_filter = mime_filter(&mime::VIDEO);
+    let ignorer = Ignorer::new();
     let video_files: Vec<PathBuf> = settings
         .input()
         .iter()
@@ -223,6 +227,7 @@ pub fn get_video_files_to_process(settings: &Settings) -> Result<Vec<PathBuf>> {
         .filter(|p| p.exists())
         .map(PathBuf::from)
         .filter(&video_filter)
+        .filter(|p| !ignorer.should_ignore(p))
         .collect();
     video_files.iter().for_each(|p| files.add_video(p));
     read_dir(settings.out_dir())?
@@ -251,6 +256,67 @@ pub fn get_video_files_to_process(settings: &Settings) -> Result<Vec<PathBuf>> {
         log::info!("Fixed modified time for {} file(s).", num_fixed);
     }
     Ok(files.get_videos_to_process())
+}
+
+struct Ignorer(RefCell<HashMap<PathBuf, GlobSet>>);
+
+impl Ignorer {
+    fn new() -> Self {
+        Self(RefCell::new(HashMap::new()))
+    }
+
+    fn load_ignore_file<P: AsRef<Path>>(&self, path_ref: P) {
+        let mut ignore_file_path = path_ref.as_ref().to_path_buf();
+        ignore_file_path.push(".mk-screens.ignore");
+        let mut globs = GlobSetBuilder::new();
+        if ignore_file_path.is_file() {
+            log::debug!("Loading ignore file: {}", ignore_file_path.display());
+            let reader = BufReader::new(fs::File::open(&ignore_file_path).unwrap());
+            for (lineno, line) in reader.lines().map(Result::unwrap).enumerate() {
+                match Glob::new(line.trim()) {
+                    Ok(glob) => {
+                        log::trace!("  Adding glob: {} (Regex: {})", glob.glob(), glob.regex());
+                        globs.add(glob);
+                    }
+                    Err(err) => panic!(
+                        "Invalid pattern on line {} of {}.\nError: {}",
+                        lineno + 1,
+                        ignore_file_path.display(),
+                        err
+                    ),
+                }
+            }
+        }
+        self.0
+            .borrow_mut()
+            .insert(path_ref.as_ref().to_path_buf(), globs.build().unwrap());
+    }
+
+    fn should_ignore<P: AsRef<Path>>(&self, path_ref: P) -> bool {
+        let mut path = path_ref.as_ref().to_path_buf();
+        while !path.is_dir() {
+            if self.0.borrow().contains_key(&path) {
+                break;
+            } else if !path.exists() {
+                self.0.borrow_mut().insert(path, GlobSet::empty());
+                return false;
+            } else if !path.pop() {
+                unreachable!()
+            }
+        }
+        if !self.0.borrow().contains_key(&path) {
+            self.load_ignore_file(&path);
+        }
+        if !self.0.borrow().get(&path).unwrap().is_match(&path_ref) {
+            if let Some(name) = path_ref.as_ref().file_name() {
+                self.0.borrow().get(&path).unwrap().is_match(name)
+            } else {
+                false
+            }
+        } else {
+            true
+        }
+    }
 }
 
 #[cfg(test)]

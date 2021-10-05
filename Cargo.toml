@@ -17,6 +17,7 @@ dotenv = "0.15"
 ffmpeg-next = "4"
 ffmpeg-sys-next = "4"
 filetime = "0.2"
+globset = "0.4"
 image = "0.23"
 indicatif = { version = "0.15", features = ["improved_unicode", "rayon"] }
 itertools = "0.9"
