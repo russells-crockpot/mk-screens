@@ -120,7 +120,17 @@ impl VidInfo {
             Ok(v) => v,
             Err(e) => return Err(AnyhowError::from(Error::CorruptVideoStream(path.into(), e))),
         };
-        let duration = stream.duration();
+        let mut duration = stream.duration();
+        if stream.duration() <= 0 {
+            for s in input.streams() {
+                let dur = s.duration();
+                if dur > 0 {
+                    duration = dur;
+                    break;
+                }
+            }
+        }
+        {}
         let dimensions = Dimensions::new(decoder.width(), decoder.height());
         let mut capture_width = (settings.width() - (settings.columns() * 4)) / settings.columns();
         if !settings.scale_up() && capture_width > dimensions.width() {

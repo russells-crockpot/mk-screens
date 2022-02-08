@@ -8,7 +8,7 @@ use lazy_static::lazy_static;
 use std::{fs::DirBuilder, path::Path};
 
 use crate::{
-    files::{get_file_stem, get_filename},
+    files::get_filename,
     settings::Settings,
     util::{envvar_to_bool, sync_mtimes, Dimensions},
     video::VidInfo,
@@ -94,12 +94,19 @@ fn save_individual_img(
 }
 
 /// Generates the screencap for a file and saves it.
-pub fn generate(pbar: &ProgressBar, settings: &Settings, path: &Path) -> Result<()> {
-    log::info!("Generating screens for {}", get_filename(&path));
-    pbar.set_message(get_file_stem(&path));
+pub fn generate<P>(pbar: &ProgressBar, settings: &Settings, path: &Path) -> Result<()>
+where
+    P: AsRef<Path>,
+{
+    let filename = get_filename(&path);
+    log::info!("Generating screens for {}", filename);
+    pbar.set_message(filename.clone());
+    log::debug!("Getting video info for {}", filename);
     let mut info = VidInfo::new(settings, path)?;
     pbar.inc(1);
+    log::trace!("Generating capture times for {}", filename);
     let times = info.generate_capture_times(settings);
+    log::trace!("Generated {} capture times for {}", times.len(), filename);
     let Dimensions(cap_width, cap_height) = info.capture_dimensions().clone();
     let mut img = RgbImage::new(
         cap_width * settings.columns(),
@@ -109,18 +116,25 @@ pub fn generate(pbar: &ProgressBar, settings: &Settings, path: &Path) -> Result<
     let mut current_y = 1;
     let captures = times
         .iter()
+        .inspect(|timestamp| {
+            log::trace!(
+                "Generating screencap for {} at time {}",
+                filename,
+                timestamp
+            )
+        })
         .map(|timestamp| ScreenCap::new(*timestamp, &mut info))
         .enumerate()
         .inspect(|_| pbar.inc(1));
-    for (idx, maybe_capture) in captures.into_iter() {
+    for (idx, maybe_capture) in captures {
         let capture = maybe_capture?;
         imageops::replace(&mut img, &capture.thumbnail(), current_x, current_y);
         if *SAVE_INDIVIDUAL_IMGS {
             save_individual_img(settings, &capture, path, idx)?;
         }
-        current_x += cap_width + 2;
+        current_x += (cap_width + 2) as i64;
         if idx != 0 && idx as u32 % settings.columns() == 0 {
-            current_y += cap_height + 2;
+            current_y += (cap_height + 2) as i64;
             current_x = 1;
         }
     }

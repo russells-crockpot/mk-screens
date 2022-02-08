@@ -16,6 +16,8 @@ sandbox/
 *.log
 ignore/
 .env
+*.wmv
+*.avi
 *.mkv
 *.mp4
 *.jpg

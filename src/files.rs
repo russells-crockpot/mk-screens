@@ -15,19 +15,34 @@ use globset::{Glob, GlobSet, GlobSetBuilder};
 use crate::{settings::Settings, util::sync_mtimes};
 
 /// A convenience function to get the file name from a path as a string.
-pub fn get_filename<P: AsRef<Path>>(path: &P) -> &str {
-    path.as_ref().file_name().unwrap().to_str().unwrap()
+pub fn get_filename<P: AsRef<Path>>(path: P) -> String {
+    if let Some(os_str) = path.as_ref().file_name() {
+        os_str
+            .to_str()
+            .map(String::from)
+            .unwrap_or_else(|| String::from("INVALID NAME"))
+    } else {
+        String::from("INVALID NAME")
+    }
 }
 
 /// A convenience function to get the file stem from a path as a string.
-pub fn get_file_stem<P: AsRef<Path>>(path: &P) -> &str {
-    path.as_ref().file_stem().unwrap().to_str().unwrap()
+pub fn get_file_stem<P: AsRef<Path>>(path: P) -> String {
+    if let Some(os_str) = path.as_ref().file_stem() {
+        os_str
+            .to_str()
+            .map(String::from)
+            .unwrap_or_else(|| String::from("INVALID NAME"))
+    } else {
+        String::from("INVALID NAME")
+    }
 }
 
 /// Gets the file name to use for a screen capture based off of the original file name, which is
 /// simple the file name suffixed with `.jpg`.
 pub fn img_file_name<P: AsRef<Path>>(path: &P) -> String {
     format!("{}.jpg", get_filename(path))
+    //format!("{}.webp", get_filename(path))
 }
 
 struct FileInfo {
@@ -36,11 +51,11 @@ struct FileInfo {
 }
 
 impl FileInfo {
-    pub fn for_video(settings: &Settings, path: &Path) -> Self {
+    pub fn for_video<P: AsRef<Path>>(settings: &Settings, path: P) -> Self {
         let mut screens_path = settings.out_dir().to_path_buf();
         screens_path.push(img_file_name(&path));
         Self {
-            video: Some(path.into()),
+            video: Some(path.as_ref().into()),
             screens: if screens_path.exists() && !settings.force() {
                 Some(screens_path)
             } else {
@@ -49,21 +64,21 @@ impl FileInfo {
         }
     }
 
-    pub fn for_screens(video_files: &[PathBuf], path: &Path) -> Self {
+    pub fn for_screens<P: AsRef<Path>>(video_files: &[PathBuf], path: P) -> Self {
         Self {
-            screens: Some(path.into()),
+            screens: Some(path.as_ref().into()),
             video: Self::find_video_file(video_files, path),
         }
     }
 
-    pub fn with_video(&mut self, path: &Path) -> &mut Self {
-        self.video = Some(path.into());
+    pub fn with_video<P: AsRef<Path>>(&mut self, path: P) -> &mut Self {
+        self.video = Some(path.as_ref().into());
         self
     }
 
-    pub fn with_screens(&mut self, settings: &Settings, path: &Path) -> &mut Self {
+    pub fn with_screens<P: AsRef<Path>>(&mut self, settings: &Settings, path: P) -> &mut Self {
         if !settings.force() {
-            self.screens = Some(path.into());
+            self.screens = Some(path.as_ref().into());
         }
         self
     }
@@ -79,7 +94,7 @@ impl FileInfo {
                     > Self::modified_time(self.screens.clone().unwrap())?))
     }
 
-    fn find_video_file(video_files: &[PathBuf], path: &Path) -> Option<PathBuf> {
+    fn find_video_file<P: AsRef<Path>>(video_files: &[PathBuf], path: P) -> Option<PathBuf> {
         let stem = get_file_stem(&path);
         for vid in video_files {
             if get_filename(vid) == stem {
@@ -128,28 +143,28 @@ impl<'a> FileInfoMap<'a> {
     }
 
     /// Adds a video file to the map.
-    pub fn add_video(&mut self, path: &Path) {
-        match self.map.get_mut(get_filename(&path)) {
+    pub fn add_video<P: AsRef<Path>>(&mut self, path: P) {
+        match self.map.get_mut(&get_filename(&path)) {
             Some(info) => {
                 info.with_video(path);
             }
             None => {
                 self.map.insert(
-                    String::from(get_filename(&path)),
+                    get_filename(&path),
                     FileInfo::for_video(self.settings, path),
                 );
             }
         }
     }
 
-    pub fn add_screencap(&mut self, path: &Path, video_files: &[PathBuf]) {
-        match self.map.get_mut(get_file_stem(&path)) {
+    pub fn add_screencap<P: AsRef<Path>>(&mut self, path: P, video_files: &[PathBuf]) {
+        match self.map.get_mut(&get_file_stem(&path)) {
             Some(info) => {
                 info.with_screens(self.settings, path);
             }
             None => {
                 self.map.insert(
-                    String::from(get_filename(&path)),
+                    get_filename(&path),
                     FileInfo::for_screens(video_files, path),
                 );
             }

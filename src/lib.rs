@@ -1,3 +1,4 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
 extern crate ffmpeg_next as ffmpeg;
 
 use std::{
@@ -14,6 +15,7 @@ use thiserror::Error as ThisError;
 
 pub mod ffmpeg_ext;
 pub mod files;
+//pub mod opts;
 pub mod screencaps;
 pub mod settings;
 pub mod util;
@@ -36,17 +38,15 @@ fn error_style() -> ProgressStyle {
         .progress_chars("███")
 }
 
-fn process_video(pbar: &ProgressBar, settings: &settings::Settings, path: &Path) {
+fn process_video<P: AsRef<Path>>(pbar: &ProgressBar, settings: &settings::Settings, path: &P) {
+    let filename = files::get_filename(&path);
+    let path = path.as_ref();
     if !path.exists() {
         pbar.set_style(error_style());
-        pbar.abandon_with_message(&format!("File {} does not exist.", path.to_str().unwrap()))
-    } else if let Err(error) = screencaps::generate(pbar, settings, path) {
+        pbar.abandon_with_message(format!("File {} does not exist.", filename))
+    } else if let Err(error) = screencaps::generate::<P>(pbar, settings, path) {
         pbar.set_style(error_style());
-        pbar.abandon_with_message(&format!(
-            "{} failed: {}",
-            files::get_file_stem(&path),
-            error
-        ));
+        pbar.abandon_with_message(format!("{} failed: {}", filename, error));
     }
 }
 

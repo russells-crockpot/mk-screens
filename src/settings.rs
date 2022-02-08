@@ -75,6 +75,13 @@ fn create_app<'a, 'b>() -> App<'a, 'b> {
                 .takes_value(true),
         )
         .arg(
+            Arg::with_name("save_failures_to_ignore")
+                .short("i")
+                .long("save-failures-to-ignore")
+                .takes_value(false)
+                .help("Write any failures to the .mk-screens.ignore file. (Unimplemented)"),
+        )
+        .arg(
             Arg::with_name("skip")
                 .short("s")
                 .long("skip")
@@ -112,6 +119,7 @@ pub struct Settings {
     skip: usize,
     fix_times: bool,
     out_dir: PathBuf,
+    save_failures_to_ignore: bool,
     #[serde(skip_serializing)]
     input: Vec<PathBuf>,
 }
@@ -148,6 +156,9 @@ impl Settings {
         }
         if args.is_present("fix-times") {
             conf.set("fix_times", true)?;
+        }
+        if args.is_present("save-failures-to-ignore") {
+            conf.set("save_failures_to_ignore", true)?;
         }
         if let Some(width) = args.value_of("width") {
             conf.set("width", width)?;
@@ -215,6 +226,7 @@ impl Settings {
         conf.set_default("synchronous", false)?;
         conf.set_default("verbose", false)?;
         conf.set_default("fix_times", false)?;
+        conf.set_default("save_failures_to_ignore", false)?;
         conf.set_default("width", 3840)?;
         conf.set_default("columns", 12)?;
         conf.set_default("rows", 12)?;
@@ -245,6 +257,10 @@ impl Settings {
 
     pub fn width(&self) -> u32 {
         self.width
+    }
+
+    pub fn save_failures_to_ignore(&self) -> bool {
+        self.save_failures_to_ignore
     }
 
     pub fn verbose(&self) -> bool {
