@@ -6,13 +6,16 @@ use image::{imageops, ImageFormat, RgbImage};
 use indicatif::ProgressBar;
 use lazy_static::lazy_static;
 use std::{fs::DirBuilder, path::Path};
+use unicode_width::UnicodeWidthStr;
 
 use crate::{
     files::get_filename,
     settings::Settings,
-    util::{envvar_to_bool, sync_mtimes, Dimensions},
+    util::{envvar_to_bool, safe_string_truncate, sync_mtimes, Dimensions},
     video::VidInfo,
 };
+
+const MAX_DISPLAY_NAME_WIDTH: usize = 20;
 
 lazy_static! {
     static ref SAVE_INDIVIDUAL_IMGS: bool = envvar_to_bool("SAVE_INDIVIDUAL_CAPTURES");
@@ -100,7 +103,15 @@ where
 {
     let filename = get_filename(&path);
     log::info!("Generating screens for {}", filename);
-    pbar.set_message(filename.clone());
+    let display_name = if filename.width() > MAX_DISPLAY_NAME_WIDTH {
+        format!(
+            "{}...",
+            safe_string_truncate(&filename, MAX_DISPLAY_NAME_WIDTH)
+        )
+    } else {
+        filename.clone()
+    };
+    pbar.set_message(display_name);
     log::debug!("Getting video info for {}", filename);
     let mut info = VidInfo::new(settings, path)?;
     pbar.inc(1);

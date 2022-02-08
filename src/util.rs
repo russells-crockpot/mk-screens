@@ -6,6 +6,7 @@ use std::{
     path::Path,
     str::FromStr as _,
 };
+use unicode_width::UnicodeWidthStr;
 
 #[derive(Debug, Clone)]
 pub struct Dimensions(pub u32, pub u32);
@@ -71,6 +72,19 @@ where
     let modified_time = FileTime::from_system_time(source_mtime);
     set_file_mtime(target_file, modified_time)?;
     Ok(true)
+}
+
+/// I know there's a better way to do this, but I don't want to deal with finding it right now.
+pub fn safe_string_truncate(s: &str, target_size: usize) -> String {
+    let mut s = String::from(s);
+    let mut cur_width = s.width();
+    while cur_width > target_size {
+        if s.pop().is_none() {
+            break;
+        }
+        cur_width = s.width();
+    }
+    s
 }
 
 #[cfg(test)]

@@ -212,6 +212,7 @@ impl VidInfo {
     /// Gets the frame image at (or near) the provided timestamp.
     pub fn get_frame_at(&mut self, timestamp: i64) -> Result<(Dimensions, Vec<u8>)> {
         let mut decoder = self.create_decoder()?;
+        //FIXME occasionally getting an "operation not permitted" here.
         self.input
             .seek_to_frame(self.video_stream_idx as i32, timestamp, SeekFlags::ANY)?;
         let mut frame = Video::empty();

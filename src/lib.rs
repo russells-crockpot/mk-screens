@@ -60,7 +60,7 @@ fn rayon_process_videos(
     } else {
         MultiProgress::new()
     };
-    mp.set_move_cursor(false);
+    mp.set_move_cursor(true);
     let pstyle = ProgressStyle::default_bar()
         .template("[{eta:>5}] {bar:.cyan/blue} {percent:3}% | {wide_msg}");
     let create_pbar = || {

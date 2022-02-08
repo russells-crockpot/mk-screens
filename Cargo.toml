@@ -32,4 +32,7 @@ serde = { version = "1.0.136", features = ["derive"] }
 serde_yaml = "0.8.23"
 structopt = "0.3.26"
 thiserror = "1.0.30"
+unicode-width = "0.1.9"
 webp = "0.2.1"
+
+[features]
