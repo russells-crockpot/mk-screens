@@ -1,5 +1,5 @@
-use anyhow::{Error, Result};
 use bitflags::bitflags;
+use eyre::{Report, Result};
 use ffmpeg::{format::context::Input, util::error::Error as FFMpegError};
 use ffmpeg_sys_next as ffmpeg_sys;
 use libc::c_int;
@@ -23,7 +23,7 @@ impl FrameSeekable for Input {
             match ffmpeg_sys::av_seek_frame(self.as_mut_ptr(), stream_idx, timestamp, flags.bits())
             {
                 s if s >= 0 => Ok(()),
-                e => Err(Error::from(FFMpegError::from(e))),
+                e => Err(Report::from(FFMpegError::from(e))),
             }
         }
     }

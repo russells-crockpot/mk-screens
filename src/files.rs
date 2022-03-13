@@ -9,7 +9,7 @@ use std::{
     time::SystemTime,
 };
 
-use anyhow::Result;
+use eyre::Result;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 
 use crate::{settings::Settings, util::sync_mtimes};
@@ -228,7 +228,7 @@ pub fn get_video_files_to_process(settings: &Settings) -> Result<Vec<PathBuf>> {
     let video_files: Vec<PathBuf> = settings
         .input()
         .iter()
-        .map(|p| {
+        .flat_map(|p| {
             if p.is_file() {
                 iter::once(p.clone()).collect::<Vec<PathBuf>>()
             } else {
@@ -238,7 +238,6 @@ pub fn get_video_files_to_process(settings: &Settings) -> Result<Vec<PathBuf>> {
                 }
             }
         })
-        .flatten()
         .filter(|p| p.exists())
         .map(PathBuf::from)
         .filter(&video_filter)

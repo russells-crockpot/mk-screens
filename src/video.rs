@@ -5,22 +5,19 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Error as AnyhowError, Result};
 use derivative::Derivative;
+use eyre::{Report, Result};
 use ffmpeg::{
+    codec::context::Context as CodecContext,
     decoder::Video as VideoDecoder,
     filter::{self, Graph},
     format::{context::Input, stream::Stream, Pixel as PixelFormat},
-    media::Type as MediaType,
-    util::frame::video::Video,
+    util::{frame::video::Video, media::Type as MediaType},
     Rational,
 };
 
 use crate::{
-    ffmpeg_ext::{FrameSeekable as _, LinkableGraph as _, SeekFlags},
-    files::img_file_name,
-    settings::Settings,
-    util::Dimensions,
+    ffmpeg_ext::LinkableGraph as _, files::img_file_name, settings::Settings, util::Dimensions,
     Error,
 };
 
@@ -91,6 +88,13 @@ fn create_filter_graph(
     Ok(graph)
 }
 
+pub fn find_best_stream<'a>(input: &'a Input, path: &Path) -> Result<Stream<'a>> {
+    input
+        .streams()
+        .find(|s| s.parameters().medium() == MediaType::Video)
+        .ok_or_else(|| Report::from(Error::NoVideoStream(path.into())))
+}
+
 #[derive(Derivative)]
 #[derivative(Debug)]
 /// Contains relevant information about a video file.
@@ -111,26 +115,10 @@ pub struct VidInfo {
 impl VidInfo {
     pub fn new(settings: &Settings, path: &Path) -> Result<Self> {
         let input = ffmpeg::format::input(&path)?;
-        let stream = if let Some(stream) = input.streams().best(MediaType::Video) {
-            stream
-        } else {
-            return Err(AnyhowError::from(Error::NoVideoStream(path.into())));
-        };
-        let decoder = match stream.codec().decoder().video() {
-            Ok(v) => v,
-            Err(e) => return Err(AnyhowError::from(Error::CorruptVideoStream(path.into(), e))),
-        };
-        let mut duration = stream.duration();
-        if stream.duration() <= 0 {
-            for s in input.streams() {
-                let dur = s.duration();
-                if dur > 0 {
-                    duration = dur;
-                    break;
-                }
-            }
-        }
-        {}
+        let stream = find_best_stream(&input, path)?;
+        let decoder = CodecContext::from_parameters(stream.parameters())?
+            .decoder()
+            .video()?;
         let dimensions = Dimensions::new(decoder.width(), decoder.height());
         let mut capture_width = (settings.width() - (settings.columns() * 4)) / settings.columns();
         if !settings.scale_up() && capture_width > dimensions.width() {
@@ -142,7 +130,7 @@ impl VidInfo {
         let filter = create_filter_graph(&decoder, &stream, &capture_dimensions)?;
         Ok(Self {
             path: path.into(),
-            duration,
+            duration: input.duration(),
             pixel_format: decoder.format(),
             dimensions,
             capture_dimensions,
@@ -190,11 +178,7 @@ impl VidInfo {
 
     /// Returns the video stream for the underlying video file.
     pub fn stream(&self) -> Result<Stream<'_>> {
-        if let Some(stream) = self.input.streams().best(MediaType::Video) {
-            Ok(stream)
-        } else {
-            Err(AnyhowError::from(Error::NoVideoStream(self.path.clone())))
-        }
+        find_best_stream(&self.input, &self.path)
     }
 
     pub fn img_file_name(&self) -> String {
@@ -202,7 +186,9 @@ impl VidInfo {
     }
 
     fn create_decoder(&self) -> Result<VideoDecoder> {
-        Ok(self.stream()?.codec().decoder().video()?)
+        Ok(CodecContext::from_parameters(self.stream()?.parameters())?
+            .decoder()
+            .video()?)
     }
 
     fn get_actual_size(&self, frame: &Video) -> Dimensions {
@@ -212,9 +198,7 @@ impl VidInfo {
     /// Gets the frame image at (or near) the provided timestamp.
     pub fn get_frame_at(&mut self, timestamp: i64) -> Result<(Dimensions, Vec<u8>)> {
         let mut decoder = self.create_decoder()?;
-        //FIXME occasionally getting an "operation not permitted" here.
-        self.input
-            .seek_to_frame(self.video_stream_idx as i32, timestamp, SeekFlags::ANY)?;
+        self.input.seek(timestamp, timestamp..self.duration)?;
         let mut frame = Video::empty();
         // Done to prevent a borrow of self
         let video_stream_idx = self.video_stream_idx;

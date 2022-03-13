@@ -59,7 +59,7 @@ pub fn envvar_to_bool(varname: &str) -> bool {
 
 /// Changes the last modified time of `target_file` to be the same as the last modified time of
 /// `source_file`.
-pub fn sync_mtimes<S, T>(source_file: S, target_file: T) -> anyhow::Result<bool>
+pub fn sync_mtimes<S, T>(source_file: S, target_file: T) -> eyre::Result<bool>
 where
     S: AsRef<Path>,
     T: AsRef<Path>,

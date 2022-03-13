@@ -1,14 +1,15 @@
 //!
 
-use anyhow::{Error, Result};
 use clap::{App, Arg, ArgMatches};
 use config::{Config, File as ConfigFile};
 use directories::BaseDirs;
+use eyre::{Report, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
     path::{Path, PathBuf},
 };
+use structopt::StructOpt;
 
 fn create_app<'a, 'b>() -> App<'a, 'b> {
     App::new(env!("CARGO_PKG_NAME"))
@@ -25,6 +26,12 @@ fn create_app<'a, 'b>() -> App<'a, 'b> {
             Arg::with_name("force")
                 .short("f")
                 .long("force")
+                .takes_value(false),
+        )
+        .arg(
+            Arg::with_name("unwrap-errors")
+                .short("e")
+                .long("unwrap-errors")
                 .takes_value(false),
         )
         .arg(
@@ -106,19 +113,40 @@ fn create_app<'a, 'b>() -> App<'a, 'b> {
         .arg(Arg::with_name("input").multiple(true))
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone)]
+#[derive(Deserialize, Serialize, Debug, Clone, StructOpt)]
+#[structopt(
+    name=env!("CARGO_PKG_NAME"),
+    version=env!("CARGO_PKG_VERSION"),
+    rename_all="kebab",
+    author=env!("CARGO_PKG_AUTHORS"),
+    about=env!("CARGO_PKG_DESCRIPTION")
+)]
 pub struct Settings {
+    #[structopt(short, long)]
     keep_files: bool,
+    #[structopt(short, long)]
     force: bool,
+    #[structopt(short, long)]
     scale_up: bool,
+    #[structopt(short, long)]
     synchronous: bool,
+    #[structopt(short, long)]
     width: u32,
+    #[structopt(short, long)]
     verbose: bool,
+    #[structopt(short, long)]
     columns: u32,
+    #[structopt(short, long)]
     rows: u32,
+    #[structopt(short, long)]
     skip: usize,
+    #[structopt(short, long)]
     fix_times: bool,
+    #[structopt(short, long)]
+    unwrap_errors: bool,
+    #[structopt(short, long)]
     out_dir: PathBuf,
+    #[structopt(short, long)]
     save_failures_to_ignore: bool,
     #[serde(skip_serializing)]
     input: Vec<PathBuf>,
@@ -141,6 +169,9 @@ impl Settings {
     fn merge_cli_args(args: ArgMatches<'_>, conf: &mut Config) -> Result<()> {
         if args.is_present("keep-files") {
             conf.set("keep_files", true)?;
+        }
+        if args.is_present("unwrap-errors") {
+            conf.set("unwrap_errors", true)?;
         }
         if args.is_present("force") {
             conf.set("force", true)?;
@@ -211,7 +242,7 @@ impl Settings {
         let path = path_ref.as_ref();
         if path.exists() {
             if !path.is_file() {
-                return Err(Error::msg(format!("{} is not a file!", path.display())));
+                return Err(Report::msg(format!("{} is not a file!", path.display())));
             }
             conf.merge(ConfigFile::from(path))?;
         }
@@ -222,6 +253,7 @@ impl Settings {
         let mut conf = Config::new();
         conf.set_default("keep_files", false)?;
         conf.set_default("force", false)?;
+        conf.set_default("unwrap_errors", false)?;
         conf.set_default("scale_up", false)?;
         conf.set_default("synchronous", false)?;
         conf.set_default("verbose", false)?;
@@ -241,6 +273,10 @@ impl Settings {
 
     pub fn keep_files(&self) -> bool {
         self.keep_files
+    }
+
+    pub fn unwrap_errors(&self) -> bool {
+        self.unwrap_errors
     }
 
     pub fn force(&self) -> bool {

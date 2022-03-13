@@ -8,7 +8,7 @@ use std::{
     thread,
 };
 
-use anyhow::Result;
+use eyre::Result;
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use rayon::prelude::*;
 use thiserror::Error as ThisError;
@@ -38,14 +38,24 @@ fn error_style() -> ProgressStyle {
         .progress_chars("███")
 }
 
+#[allow(clippy::panicking_unwrap)]
 fn process_video<P: AsRef<Path>>(pbar: &ProgressBar, settings: &settings::Settings, path: &P) {
     let filename = files::get_filename(&path);
     let path = path.as_ref();
     if !path.exists() {
         pbar.set_style(error_style());
-        pbar.abandon_with_message(format!("File {} does not exist.", filename))
-    } else if let Err(error) = screencaps::generate::<P>(pbar, settings, path) {
+        log::error!("File {} does not exist.", filename);
+        pbar.abandon_with_message(format!("File {} does not exist.", filename));
+        return;
+    }
+    let result = screencaps::generate::<P>(pbar, settings, path);
+    log::info!("settings.unwrap_errors() = {}", settings.unwrap_errors());
+    log::info!("settings.force() = {}", settings.force());
+    if settings.unwrap_errors() && result.is_err() {
+        result.unwrap();
+    } else if let Err(error) = result {
         pbar.set_style(error_style());
+        log::error!("{} failed: {}", filename, error);
         pbar.abandon_with_message(format!("{} failed: {}", filename, error));
     }
 }
@@ -60,7 +70,7 @@ fn rayon_process_videos(
     } else {
         MultiProgress::new()
     };
-    mp.set_move_cursor(true);
+    //mp.set_move_cursor(true);
     let pstyle = ProgressStyle::default_bar()
         .template("[{eta:>5}] {bar:.cyan/blue} {percent:3}% | {wide_msg}");
     let create_pbar = || {

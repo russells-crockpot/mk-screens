@@ -1,6 +1,6 @@
 //! Contains items relevant to generating the screencap files.
-use anyhow::Result;
 use derivative::Derivative;
+use eyre::Result;
 use ffmpeg::format::Pixel;
 use image::{imageops, ImageFormat, RgbImage};
 use indicatif::ProgressBar;
@@ -15,7 +15,7 @@ use crate::{
     video::VidInfo,
 };
 
-const MAX_DISPLAY_NAME_WIDTH: usize = 20;
+const MAX_DISPLAY_NAME_WIDTH: usize = 80;
 
 lazy_static! {
     static ref SAVE_INDIVIDUAL_IMGS: bool = envvar_to_bool("SAVE_INDIVIDUAL_CAPTURES");

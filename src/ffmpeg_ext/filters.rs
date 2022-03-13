@@ -1,5 +1,5 @@
 use crate::Error;
-use anyhow::Result;
+use eyre::Result;
 use ffmpeg::{
     filter::{context::Context, Graph},
     util::error::Error as FFMpegError,
@@ -16,7 +16,7 @@ impl LinkableFilterContext for Context<'_> {
         unsafe {
             match ffmpeg_sys::avfilter_link(self.as_mut_ptr(), 0, other.as_mut_ptr(), 0) {
                 s if s >= 0 => Ok(other),
-                e => Err(anyhow::Error::from(FFMpegError::from(e))),
+                e => Err(eyre::Report::from(FFMpegError::from(e))),
             }
         }
     }
@@ -34,7 +34,7 @@ impl LinkableGraph for Graph {
             let ff_ptr = ffmpeg_sys::avfilter_graph_get_filter(self.as_mut_ptr(), from_s.as_ptr());
 
             let ff = if ff_ptr.is_null() {
-                return Err(anyhow::Error::from(Error::NoSuchFilter(String::from(to))));
+                return Err(eyre::Report::from(Error::NoSuchFilter(String::from(to))));
             } else {
                 ff_ptr
             };
@@ -42,13 +42,13 @@ impl LinkableGraph for Graph {
             let tf_ptr = ffmpeg_sys::avfilter_graph_get_filter(self.as_mut_ptr(), to_s.as_ptr());
 
             let tf = if tf_ptr.is_null() {
-                return Err(anyhow::Error::from(Error::NoSuchFilter(String::from(to))));
+                return Err(eyre::Report::from(Error::NoSuchFilter(String::from(to))));
             } else {
                 tf_ptr
             };
             match ffmpeg_sys::avfilter_link(ff, 0, tf, 0) {
                 s if s >= 0 => Ok(()),
-                e => Err(anyhow::Error::from(FFMpegError::from(e))),
+                e => Err(eyre::Report::from(FFMpegError::from(e))),
             }
         }
     }
