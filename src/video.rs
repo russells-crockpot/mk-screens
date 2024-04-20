@@ -55,7 +55,7 @@ fn create_filter_graph(
         &buffer_args.join(":"),
     )?;
     graph.add(&filter::find("buffersink").unwrap(), "out", "")?;
-    let drawtext_args = vec![
+    let drawtext_args = [
         "x=(w-tw)/1.05".to_string(),
         "y=h-(2*lh)".to_string(),
         "fontcolor=white".to_string(),
@@ -75,7 +75,7 @@ fn create_filter_graph(
     graph.add(
         &filter::find("scale").unwrap(),
         "scale",
-        &vec![
+        &[
             format!("w={}", out_dims.width()),
             format!("h={}", out_dims.height()),
             "eval=frame".to_string(),

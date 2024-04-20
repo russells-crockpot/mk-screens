@@ -31,8 +31,8 @@ fn main() -> Result<()> {
         Err(error) => {
             if error.is::<clap::Error>() {
                 let error = error.downcast::<clap::Error>()?;
-                if error.kind == clap::ErrorKind::HelpDisplayed {
-                    println!("{}", error.message);
+                if error.kind() == clap::error::ErrorKind::DisplayHelp {
+                    error.print()?;
                     Ok(())
                 } else {
                     Err(error.into())

@@ -45,6 +45,7 @@ pub fn img_file_name<P: AsRef<Path>>(path: &P) -> String {
     //format!("{}.webp", get_filename(path))
 }
 
+#[derive(Debug)]
 struct FileInfo {
     video: Option<PathBuf>,
     screens: Option<PathBuf>,
@@ -158,6 +159,9 @@ impl<'a> FileInfoMap<'a> {
     }
 
     pub fn add_screencap<P: AsRef<Path>>(&mut self, path: P, video_files: &[PathBuf]) {
+        log::trace!("Adding screen cap {}...", path.as_ref().display());
+        let pbuf = PathBuf::from(get_file_stem(&path));
+        log::info!("{}: {}", get_file_stem(&path), pbuf.exists());
         match self.map.get_mut(&get_file_stem(&path)) {
             Some(info) => {
                 info.with_screens(self.settings, path);
@@ -175,7 +179,7 @@ impl<'a> FileInfoMap<'a> {
         self.map
             .values()
             .filter(|info| info.should_delete_screens())
-            .map(|info| info.screens().unwrap())
+            .filter_map(|info| info.screens())
             .collect()
     }
 
@@ -222,9 +226,10 @@ pub fn mime_filter(mime_type: &'static mime::Name<'static>) -> Box<dyn Fn(&PathB
 /// 3. If it does have a screencap file for it, then the video file must have been modified more
 ///    recently than the screencap file.
 pub fn get_video_files_to_process(settings: &Settings) -> Result<Vec<PathBuf>> {
+    log::info!("Creating file map...");
     let mut files = FileInfoMap::new(settings);
-    let video_filter = mime_filter(&mime::VIDEO);
     let ignorer = Ignorer::new();
+    log::info!("Finding video files...");
     let video_files: Vec<PathBuf> = settings
         .input()
         .iter()
@@ -240,26 +245,29 @@ pub fn get_video_files_to_process(settings: &Settings) -> Result<Vec<PathBuf>> {
         })
         .filter(|p| p.exists())
         .map(PathBuf::from)
-        .filter(&video_filter)
+        .filter(&mime_filter(&mime::VIDEO))
         .filter(|p| !ignorer.should_ignore(p))
         .collect();
     video_files.iter().for_each(|p| files.add_video(p));
+    log::info!("Finding existing screencaps...");
     read_dir(settings.out_dir())?
         .map(|f| f.unwrap().path())
-        .filter(|p| p.exists())
-        .filter(&video_filter)
         .for_each(|p| files.add_screencap(&p, &video_files));
     if !settings.keep_files() {
         let to_delete = files.get_screens_to_delete();
         if !to_delete.is_empty() {
+            println!(
+                "Deleting {} screencap file(s) with no associated video file.",
+                to_delete.len()
+            );
             log::info!(
                 "Deleting {} screencap file(s) with no associated video file.",
                 to_delete.len()
             );
             for path in to_delete {
-                match remove_file(&path) {
-                    Ok(_) => log::info!("Deleted {}", get_filename(&path)),
-                    Err(e) => log::warn!("Failed to delete {}. Error: {}", get_filename(&path), e),
+                match remove_file(path) {
+                    Ok(_) => log::info!("Deleted {}", get_filename(path)),
+                    Err(e) => log::warn!("Failed to delete {}. Error: {}", get_filename(path), e),
                 }
             }
         }

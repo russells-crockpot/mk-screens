@@ -1,7 +1,10 @@
 //!
 
-use clap::{App, Arg, ArgMatches};
-use config::{Config, File as ConfigFile};
+use clap::Parser;
+use config::{
+    builder::{ConfigBuilder as BaseConfigBuilder, DefaultState},
+    Config, File as ConfigFile,
+};
 use directories::BaseDirs;
 use eyre::{Report, Result};
 use serde::{Deserialize, Serialize};
@@ -9,262 +12,180 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-use structopt::StructOpt;
 
-fn create_app<'a, 'b>() -> App<'a, 'b> {
-    App::new(env!("CARGO_PKG_NAME"))
-        .author(env!("CARGO_PKG_AUTHORS"))
-        .version(env!("CARGO_PKG_VERSION"))
-        .about(env!("CARGO_PKG_DESCRIPTION"))
-        .arg(
-            Arg::with_name("keep-files")
-                .short("k")
-                .long("keep-files")
-                .takes_value(false),
-        )
-        .arg(
-            Arg::with_name("force")
-                .short("f")
-                .long("force")
-                .takes_value(false),
-        )
-        .arg(
-            Arg::with_name("unwrap-errors")
-                .short("e")
-                .long("unwrap-errors")
-                .takes_value(false),
-        )
-        .arg(
-            Arg::with_name("verbose")
-                .short("v")
-                .long("verbose")
-                .takes_value(false),
-        )
-        .arg(
-            Arg::with_name("scale-up")
-                .short("u")
-                .long("scale-up")
-                .takes_value(false)
-                .help(concat!(
-                    "If the video is smaller than the thumbnails would be, then scale up ",
-                    "the thumbnail."
-                )),
-        )
-        .arg(
-            Arg::with_name("synchronous")
-                .short("y")
-                .long("synchronous")
-                .takes_value(false)
-                .help("Process only one video at a time."),
-        )
-        .arg(
-            Arg::with_name("fix-times")
-                .long("fix-times")
-                .takes_value(false)
-                .help("Fixes the modified time of any existing screens files."),
-        )
-        .arg(
-            Arg::with_name("width")
-                .takes_value(true)
-                .short("w")
-                .long("width"),
-        )
-        .arg(
-            Arg::with_name("columns")
-                .short("c")
-                .long("columns")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::with_name("rows")
-                .short("r")
-                .long("rows")
-                .takes_value(true),
-        )
-        .arg(
-            Arg::with_name("save_failures_to_ignore")
-                .short("i")
-                .long("save-failures-to-ignore")
-                .takes_value(false)
-                .help("Write any failures to the .mk-screens.ignore file. (Unimplemented)"),
-        )
-        .arg(
-            Arg::with_name("skip")
-                .short("s")
-                .long("skip")
-                .takes_value(true)
-                .help("The percent of amount of the video to skip at the beginning of the file."),
-        )
-        .arg(
-            Arg::with_name("config")
-                .long("config")
-                .takes_value(true)
-                .help(concat!(
-                    "The configuration file to use. If provided, no other config files will ",
-                    "be loaded."
-                )),
-        )
-        .arg(
-            Arg::with_name("out_dir")
-                .short("o")
-                .long("out_dir")
-                .takes_value(true),
-        )
-        .arg(Arg::with_name("input").multiple(true))
+#[derive(Parser)]
+#[command(version, author)]
+#[command(rename_all = "kebab")]
+#[command(about = env!("CARGO_PKG_DESCRIPTION"))]
+pub struct Cli {
+    #[arg(long)]
+    keep_files: bool,
+    #[arg(long)]
+    force: bool,
+    #[arg(short = 'e', long)]
+    unwrap_errors: bool,
+    #[arg(short, long)]
+    verbose: bool,
+    #[arg(
+        short = 'u',
+        long,
+        help = "If the video is smaller than the thumbnails would be, then scale up the thumbnail."
+    )]
+    scale_up: bool,
+    #[arg(short = 'y', long, help = "Process only one video at a time.")]
+    synchronous: bool,
+    #[arg(long, help = "Fixes the modified time of any existing screens files.")]
+    fix_times: bool,
+    #[arg(short, long)]
+    width: Option<u32>,
+    #[arg(short, long)]
+    columns: Option<u32>,
+    #[arg(short, long)]
+    rows: Option<u32>,
+    #[arg(
+        short = 'i',
+        long,
+        help = "Write any failures to the .mk-screens.ignore file. (Unimplemented)"
+    )]
+    save_failures_to_ignore: bool,
+    #[arg(
+        short,
+        long,
+        help = "The percent of amount of the video to skip at the beginning of the file."
+    )]
+    skip: Option<u32>,
+    #[arg(long)]
+    config: Option<String>,
+    #[arg(short, long)]
+    out_dir: Option<String>,
+    #[arg(default_value = ".")]
+    input: Vec<String>,
 }
 
-#[derive(Deserialize, Serialize, Debug, Clone, StructOpt)]
-#[structopt(
-    name=env!("CARGO_PKG_NAME"),
-    version=env!("CARGO_PKG_VERSION"),
-    rename_all="kebab",
-    author=env!("CARGO_PKG_AUTHORS"),
-    about=env!("CARGO_PKG_DESCRIPTION")
-)]
+type ConfigBuilder = BaseConfigBuilder<DefaultState>;
+
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Settings {
-    #[structopt(short, long)]
     keep_files: bool,
-    #[structopt(short, long)]
     force: bool,
-    #[structopt(short, long)]
-    scale_up: bool,
-    #[structopt(short, long)]
-    synchronous: bool,
-    #[structopt(short, long)]
-    width: u32,
-    #[structopt(short, long)]
-    verbose: bool,
-    #[structopt(short, long)]
-    columns: u32,
-    #[structopt(short, long)]
-    rows: u32,
-    #[structopt(short, long)]
-    skip: usize,
-    #[structopt(short, long)]
-    fix_times: bool,
-    #[structopt(short, long)]
     unwrap_errors: bool,
-    #[structopt(short, long)]
-    out_dir: PathBuf,
-    #[structopt(short, long)]
+    verbose: bool,
+    scale_up: bool,
+    synchronous: bool,
+    fix_times: bool,
+    width: u32,
+    columns: u32,
+    rows: u32,
     save_failures_to_ignore: bool,
+    skip: usize,
+    out_dir: PathBuf,
     #[serde(skip_serializing)]
     input: Vec<PathBuf>,
 }
 
 impl Settings {
     pub fn load() -> Result<Self> {
-        let mut conf = Self::get_default_config()?;
-        let args = create_app().get_matches_safe()?;
-        if let Some(config_file) = args.value_of("config") {
-            Self::load_from_file(config_file, &mut conf)?;
+        let cli = Cli::parse();
+        let mut conf_builder = Self::get_default_config()?;
+        if let Some(ref config_file) = cli.config {
+            conf_builder = Self::load_from_file(config_file, conf_builder)?;
         } else {
-            Self::load_base_file(&mut conf)?;
-            Self::load_from_file(".mk-screens.yaml", &mut conf)?;
+            conf_builder = Self::load_base_file(conf_builder)?;
+            conf_builder = Self::load_from_file(".mk-screens.yaml", conf_builder)?;
         }
-        Self::merge_cli_args(args, &mut conf)?;
-        Ok(conf.try_into()?)
+        conf_builder = Self::merge_cli_args(cli, conf_builder)?;
+        Ok(conf_builder.build()?.try_deserialize()?)
     }
 
-    fn merge_cli_args(args: ArgMatches<'_>, conf: &mut Config) -> Result<()> {
-        if args.is_present("keep-files") {
-            conf.set("keep_files", true)?;
+    fn merge_cli_args(cli: Cli, mut conf_builder: ConfigBuilder) -> Result<ConfigBuilder> {
+        if cli.fix_times {
+            conf_builder = conf_builder.set_override("fix_times", true)?;
         }
-        if args.is_present("unwrap-errors") {
-            conf.set("unwrap_errors", true)?;
+        if cli.force {
+            conf_builder = conf_builder.set_override("force", true)?;
         }
-        if args.is_present("force") {
-            conf.set("force", true)?;
+        if cli.keep_files {
+            conf_builder = conf_builder.set_override("keep_files", true)?;
         }
-        if args.is_present("scale-up") {
-            conf.set("scale_up", true)?;
+        if cli.save_failures_to_ignore {
+            conf_builder = conf_builder.set_override("save_failures_to_ignore", true)?;
         }
-        if args.is_present("synchronous") {
-            conf.set("synchronous", true)?;
+        if cli.scale_up {
+            conf_builder = conf_builder.set_override("scale_up", true)?;
         }
-        if args.is_present("verbose") {
-            conf.set("verbose", true)?;
+        if cli.synchronous {
+            conf_builder = conf_builder.set_override("synchronous", true)?;
         }
-        if args.is_present("fix-times") {
-            conf.set("fix_times", true)?;
+        if cli.unwrap_errors {
+            conf_builder = conf_builder.set_override("unwrap_errors", true)?;
         }
-        if args.is_present("save-failures-to-ignore") {
-            conf.set("save_failures_to_ignore", true)?;
+        if cli.verbose {
+            conf_builder = conf_builder.set_override("verbose", true)?;
         }
-        if let Some(width) = args.value_of("width") {
-            conf.set("width", width)?;
-        }
-        if let Some(columns) = args.value_of("columns") {
-            conf.set("columns", columns)?;
-        }
-        if let Some(rows) = args.value_of("rows") {
-            conf.set("rows", rows)?;
-        }
-        if let Some(skip) = args.value_of("skip") {
-            conf.set("skip", skip)?;
-        }
-        if let Some(out_dir) = args.value_of("out-dir") {
-            conf.set("out_dir", out_dir)?;
-        }
-        if let Some(input) = args.values_of_lossy("input") {
-            conf.set("input", input)?;
-        } else {
-            conf.set("input", vec!["."])?;
-        }
-        Ok(())
+        Ok(conf_builder
+            .set_override_option("width", cli.width)?
+            .set_override_option("columns", cli.columns)?
+            .set_override_option("rows", cli.rows)?
+            .set_override_option("skip", cli.skip)?
+            .set_override_option("out_dir", cli.out_dir)?
+            .set_override("input", cli.input)?)
     }
 
-    fn load_base_file(conf: &mut Config) -> Result<()> {
+    fn load_base_file(conf_builder: ConfigBuilder) -> Result<ConfigBuilder> {
         let dirs = {
             let maybe_dirs = BaseDirs::new();
             if maybe_dirs.is_none() {
                 //TODO maybe print a warning?
-                return Ok(());
+                return Ok(conf_builder);
             }
             maybe_dirs.unwrap()
         };
         let config_dir = dirs.config_dir();
         if !config_dir.exists() {
-            fs::create_dir_all(&config_dir)?;
+            fs::create_dir_all(config_dir)?;
         }
         let mut config_path = PathBuf::from(config_dir);
         config_path.push("mk-screens.yaml");
         if !config_path.exists() {
-            let to_save = conf.clone().try_into::<Self>()?;
+            let to_save = conf_builder.build_cloned()?.try_deserialize::<Self>()?;
+            //let to_save = conf_builder.build_cloned().try_into()?;
             fs::write(&config_path, serde_yaml::to_vec(&to_save)?)?;
-            Ok(())
+            Ok(conf_builder)
         } else {
-            Self::load_from_file(config_path, conf)
+            Self::load_from_file(config_path, conf_builder)
         }
     }
 
-    fn load_from_file<P: AsRef<Path>>(path_ref: P, conf: &mut Config) -> Result<()> {
+    fn load_from_file<P>(path_ref: P, conf_builder: ConfigBuilder) -> Result<ConfigBuilder>
+    where
+        P: AsRef<Path>,
+    {
         let path = path_ref.as_ref();
         if path.exists() {
             if !path.is_file() {
                 return Err(Report::msg(format!("{} is not a file!", path.display())));
             }
-            conf.merge(ConfigFile::from(path))?;
+            Ok(conf_builder.add_source(ConfigFile::from(path)))
+        } else {
+            Ok(conf_builder)
         }
-        Ok(())
     }
 
-    fn get_default_config() -> Result<Config> {
-        let mut conf = Config::new();
-        conf.set_default("keep_files", false)?;
-        conf.set_default("force", false)?;
-        conf.set_default("unwrap_errors", false)?;
-        conf.set_default("scale_up", false)?;
-        conf.set_default("synchronous", false)?;
-        conf.set_default("verbose", false)?;
-        conf.set_default("fix_times", false)?;
-        conf.set_default("save_failures_to_ignore", false)?;
-        conf.set_default("width", 3840)?;
-        conf.set_default("columns", 12)?;
-        conf.set_default("rows", 12)?;
-        conf.set_default("skip", 5)?;
-        conf.set_default("out_dir", "screens")?;
-        Ok(conf)
+    fn get_default_config() -> Result<ConfigBuilder> {
+        Ok(Config::builder()
+            .set_default("keep_files", false)?
+            .set_default("force", false)?
+            .set_default("unwrap_errors", false)?
+            .set_default("scale_up", false)?
+            .set_default("synchronous", false)?
+            .set_default("verbose", false)?
+            .set_default("fix_times", false)?
+            .set_default("save_failures_to_ignore", false)?
+            .set_default("width", 3840)?
+            .set_default("columns", 12)?
+            .set_default("rows", 12)?
+            .set_default("skip", 5)?
+            .set_default("out_dir", "screens")?)
     }
 
     pub fn num_captures(&self) -> u32 {

@@ -101,7 +101,7 @@ pub fn generate<P>(pbar: &ProgressBar, settings: &Settings, path: &Path) -> Resu
 where
     P: AsRef<Path>,
 {
-    let filename = get_filename(&path);
+    let filename = get_filename(path);
     log::info!("Generating screens for {}", filename);
     let display_name = if filename.width() > MAX_DISPLAY_NAME_WIDTH {
         format!(

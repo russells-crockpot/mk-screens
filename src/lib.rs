@@ -1,11 +1,13 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 extern crate ffmpeg_next as ffmpeg;
 
+#[macro_use]
+extern crate log;
+
 use std::{
     fs::DirBuilder,
     iter,
     path::{Path, PathBuf},
-    thread,
 };
 
 use eyre::Result;
@@ -32,32 +34,35 @@ pub enum Error {
     NoSuchFilter(String),
 }
 
-fn error_style() -> ProgressStyle {
-    ProgressStyle::default_bar()
-        .template("[{eta:>5}] {bar:.red/red} {percent:3}% | {wide_msg}")
-        .progress_chars("███")
+fn error_style() -> Result<ProgressStyle> {
+    Ok(ProgressStyle::default_bar()
+        .template("[{eta:>5}] {bar:.red/red} {percent:3}% | {wide_msg}")?
+        .progress_chars("███"))
 }
 
 #[allow(clippy::panicking_unwrap)]
-fn process_video<P: AsRef<Path>>(pbar: &ProgressBar, settings: &settings::Settings, path: &P) {
-    let filename = files::get_filename(&path);
+fn process_video<P: AsRef<Path>>(
+    pbar: &ProgressBar,
+    settings: &settings::Settings,
+    path: &P,
+) -> Result<()> {
+    let filename = files::get_filename(path);
     let path = path.as_ref();
     if !path.exists() {
-        pbar.set_style(error_style());
+        pbar.set_style(error_style()?);
         log::error!("File {} does not exist.", filename);
         pbar.abandon_with_message(format!("File {} does not exist.", filename));
-        return;
+        return Ok(());
     }
     let result = screencaps::generate::<P>(pbar, settings, path);
-    log::info!("settings.unwrap_errors() = {}", settings.unwrap_errors());
-    log::info!("settings.force() = {}", settings.force());
     if settings.unwrap_errors() && result.is_err() {
         result.unwrap();
     } else if let Err(error) = result {
-        pbar.set_style(error_style());
+        pbar.set_style(error_style()?);
         log::error!("{} failed: {}", filename, error);
         pbar.abandon_with_message(format!("{} failed: {}", filename, error));
     }
+    Ok(())
 }
 
 fn rayon_process_videos(
@@ -72,7 +77,7 @@ fn rayon_process_videos(
     };
     //mp.set_move_cursor(true);
     let pstyle = ProgressStyle::default_bar()
-        .template("[{eta:>5}] {bar:.cyan/blue} {percent:3}% | {wide_msg}");
+        .template("[{eta:>5}] {bar:.cyan/blue} {percent:3}% | {wide_msg}")?;
     let create_pbar = || {
         let pbar = mp.add(ProgressBar::new((settings.num_captures() + 2) as u64));
         pbar.set_style(pstyle.clone());
@@ -82,18 +87,17 @@ fn rayon_process_videos(
         .drain(..)
         .zip(iter::from_fn(create_pbar))
         .collect();
-    thread::spawn(move || {
-        if settings.synchronous() {
-            items
-                .iter()
-                .for_each(|(path, pbar)| process_video(pbar, &settings, path));
-        } else {
-            items
-                .par_iter()
-                .for_each(|(path, pbar)| process_video(pbar, &settings, path));
-        }
-    });
-    mp.join()?;
+    if settings.synchronous() {
+        items
+            .iter()
+            .try_for_each(|(path, pbar)| process_video(pbar, &settings, path))
+        //.collect::<Result<()>>()
+    } else {
+        items
+            .par_iter()
+            .map(|(path, pbar)| process_video(pbar, &settings, path))
+            .collect::<Result<()>>()
+    }?;
     Ok(())
 }
 
@@ -109,6 +113,7 @@ pub fn run(settings: &settings::Settings) -> Result<()> {
             .recursive(true)
             .create(settings.out_dir())?;
     }
+    debug!("Settings: {:#?}", settings);
     let video_files = files::get_video_files_to_process(settings)?;
     //process_videos(&settings, video_files)?;
     rayon_process_videos(settings, video_files)?;
