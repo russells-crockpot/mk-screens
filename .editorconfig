@@ -18,7 +18,7 @@ trim_trailing_whitespace = false
 insert_final_newline = false
 quote_type = single
 
-[*.{yaml,js]
+[*.{yaml,js}]
 indent_size = 2
 
 [*.ts]
