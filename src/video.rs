@@ -1,6 +1,5 @@
 //! Items relating to video files.
 
-use crate::Result;
 use std::{
     iter::repeat,
     path::{Path, PathBuf},
@@ -18,7 +17,7 @@ use ffmpeg::{
 
 use crate::{
     ffmpeg_ext::LinkableGraph as _, files::img_file_name, settings::Settings, util::Dimensions,
-    Error,
+    Error, Result,
 };
 
 const BACK_TRIM_AMOUNT: f64 = 0.01;
@@ -88,12 +87,12 @@ fn create_filter_graph(
     Ok(graph)
 }
 
-pub fn find_best_stream<'a>(input: &'a Input, path: &Path) -> Result<Stream<'a>> {
+pub fn find_best_stream<P: AsRef<Path>>(input: &Input, path: P) -> Result<Stream> {
     input
         .streams()
         .find(|s| s.parameters().medium() == MediaType::Video)
         .ok_or_else(|| Error::NoVideoStream {
-            path: path.display().to_string(),
+            path: path.as_ref().to_path_buf(),
         })
 }
 
@@ -115,9 +114,9 @@ pub struct VidInfo {
 }
 
 impl VidInfo {
-    pub fn new(settings: &Settings, path: &Path) -> Result<Self> {
+    pub fn new<P: AsRef<Path>>(settings: &Settings, path: P) -> Result<Self> {
         let input = ffmpeg::format::input(&path)?;
-        let stream = find_best_stream(&input, path)?;
+        let stream = find_best_stream(&input, &path)?;
         let decoder = CodecContext::from_parameters(stream.parameters())?
             .decoder()
             .video()?;
@@ -131,7 +130,7 @@ impl VidInfo {
         let capture_dimensions = Dimensions::new(capture_width, capture_height as u32);
         let filter = create_filter_graph(&decoder, &stream, &capture_dimensions)?;
         Ok(Self {
-            path: path.into(),
+            path: path.as_ref().to_path_buf(),
             duration: input.duration(),
             pixel_format: decoder.format(),
             dimensions,
@@ -157,8 +156,8 @@ impl VidInfo {
     }
 
     /// The path to the original video file.
-    pub fn path(&self) -> &PathBuf {
-        &self.path
+    pub fn path(&self) -> &Path {
+        self.path.as_ref()
     }
 
     /// The pixel format of the original video file.

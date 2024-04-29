@@ -11,6 +11,7 @@
     "fontsize",
     "framestep",
     "imageops",
+    "mfilter",
     "mtimes",
     "multiprogress",
     "pbar",

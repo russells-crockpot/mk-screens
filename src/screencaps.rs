@@ -65,19 +65,23 @@ impl ScreenCap {
     }
 
     /// Saves the generated screen capture to the provided file.
-    pub fn save_file(&self, path: &Path) -> Result<()> {
-        log::info!("Saving to file {}", path.to_str().unwrap());
+    pub fn save_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        log::info!("Saving to file {}", path.as_ref().display());
         self.image.save_with_format(path, ImageFormat::Jpeg)?;
         Ok(())
     }
 }
 
-fn save_individual_img(
+fn save_individual_img<P>(
     settings: &Settings,
     cap: &ScreenCap,
-    vidfile: &Path,
+    vidfile: P,
     idx: usize,
-) -> Result<()> {
+) -> Result<()>
+where
+    P: AsRef<Path>,
+{
+    let vidfile = vidfile.as_ref();
     let mut out_path = settings.out_dir().to_path_buf();
     if *DIR_FOR_EACH_CAP {
         out_path.push(vidfile.file_stem().unwrap());
@@ -97,11 +101,11 @@ fn save_individual_img(
 }
 
 /// Generates the screencap for a file and saves it.
-pub fn generate<P>(pbar: &ProgressBar, settings: &Settings, path: &Path) -> Result<()>
+pub fn generate<P>(pbar: &ProgressBar, settings: &Settings, path: P) -> Result<()>
 where
     P: AsRef<Path>,
 {
-    let filename = get_filename(path);
+    let filename = get_filename(&path);
     log::info!("Generating screens for {}", filename);
     let display_name = if filename.width() > MAX_DISPLAY_NAME_WIDTH {
         format!(
@@ -113,7 +117,7 @@ where
     };
     pbar.set_message(display_name);
     log::debug!("Getting video info for {}", filename);
-    let mut info = VidInfo::new(settings, path)?;
+    let mut info = VidInfo::new(settings, &path)?;
     pbar.inc(1);
     log::trace!("Generating capture times for {}", filename);
     let times = info.generate_capture_times(settings);
@@ -141,7 +145,7 @@ where
         let capture = maybe_capture?;
         imageops::replace(&mut img, &capture.thumbnail(), current_x, current_y);
         if *SAVE_INDIVIDUAL_IMGS {
-            save_individual_img(settings, &capture, path, idx)?;
+            save_individual_img(settings, &capture, &path, idx)?;
         }
         current_x += (cap_width + 2) as i64;
         if idx != 0 && idx as u32 % settings.columns() == 0 {
@@ -152,7 +156,7 @@ where
     let mut out_path = settings.out_dir().to_path_buf();
     out_path.push(info.img_file_name());
     img.save_with_format(out_path.clone(), ImageFormat::Jpeg)?;
-    sync_mtimes(path, out_path)?;
+    sync_mtimes(&path, out_path)?;
     pbar.finish_and_clear();
     Ok(())
 }

@@ -164,7 +164,7 @@ impl Settings {
         if path.exists() {
             if !path.is_file() {
                 return Err(Error::NotAFile {
-                    path: path.display().to_string(),
+                    path: path.to_path_buf(),
                 });
             }
             Ok(conf_builder.add_source(ConfigFile::from(path)))

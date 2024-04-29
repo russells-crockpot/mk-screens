@@ -24,7 +24,7 @@ pub fn process_video<P: AsRef<Path>>(
         log::error!("File {} does not exist.", filename);
         pbar.abandon_with_message(format!("File {} does not exist.", filename));
     } else {
-        let result = screencaps::generate::<P>(pbar, settings, path);
+        let result = screencaps::generate(pbar, settings, path);
         if settings.unwrap_errors() && result.is_err() {
             result.unwrap();
         } else if let Err(error) = result {

@@ -119,11 +119,11 @@ impl FileInfo {
         }
     }
 
-    pub fn screens(&self) -> Option<&PathBuf> {
-        self.screens.as_ref()
+    pub fn screens(&self) -> Option<&Path> {
+        self.screens.as_ref().map(<PathBuf as AsRef<Path>>::as_ref)
     }
-    pub fn video(&self) -> Option<&PathBuf> {
-        self.video.as_ref()
+    pub fn video(&self) -> Option<&Path> {
+        self.video.as_ref().map(<PathBuf as AsRef<Path>>::as_ref)
     }
 }
 
@@ -174,7 +174,7 @@ impl<'a> FileInfoMap<'a> {
         }
     }
 
-    pub fn get_screens_to_delete(&self) -> Vec<&PathBuf> {
+    pub fn get_screens_to_delete(&self) -> Vec<&Path> {
         self.map
             .values()
             .filter(|info| info.should_delete_screens())
@@ -187,7 +187,7 @@ impl<'a> FileInfoMap<'a> {
             .values()
             //TODO
             .filter(|info| info.should_generate_screens().unwrap())
-            .map(|info| info.video().unwrap().clone())
+            .map(|info| info.video().unwrap().to_path_buf())
             .collect()
     }
 
@@ -206,17 +206,15 @@ impl<'a> FileInfoMap<'a> {
     }
 }
 
-/// Creates a closure that will filter out any files whose MIME type is not the specified type.
-/// Useful for using with an iterator's `.filter()` method.
-pub fn mime_filter(mime_type: &'static mime::Name<'static>) -> Box<dyn Fn(&PathBuf) -> bool> {
-    let mime_type = *mime_type;
-    Box::new(move |path| {
-        let rval = mime_guess::from_path(path)
-            .into_iter()
-            .filter(|g| g.type_() == mime_type)
-            .count();
-        rval > 0
-    })
+fn video_mime_type_filter<P>(path: P) -> bool
+where
+    P: AsRef<Path>,
+{
+    let rval = mime_guess::from_path(path)
+        .into_iter()
+        .filter(|g| g.type_() == mime::VIDEO)
+        .count();
+    rval > 0
 }
 
 /// Gets a list of video files to process. A video file should be processed if:
@@ -232,6 +230,7 @@ pub fn get_video_files_to_process(settings: &Settings) -> Result<Vec<PathBuf>> {
     let video_files: Vec<PathBuf> = settings
         .input()
         .iter()
+        .map(|p| p.to_path_buf())
         .flat_map(|p| {
             if p.is_file() {
                 iter::once(p.clone()).collect::<Vec<PathBuf>>()
@@ -243,9 +242,8 @@ pub fn get_video_files_to_process(settings: &Settings) -> Result<Vec<PathBuf>> {
             }
         })
         .filter(|p| p.exists())
-        .map(PathBuf::from)
-        .filter(&mime_filter(&mime::VIDEO))
         .filter(|p| !ignorer.should_ignore(p))
+        .filter(|p| video_mime_type_filter(p))
         .collect();
     video_files.iter().for_each(|p| files.add_video(p));
     log::info!("Finding existing screencaps...");
@@ -360,28 +358,27 @@ mod tests {
     }
 
     #[test]
-    fn test_mime_filter() {
-        let text_filter = mime_filter(&mime::TEXT);
+    fn test_create_video_mime_type_filter() {
         let test_vec_1 = vec!["file1.txt", "file2.html", "file3.txt"];
         let results_1 = test_vec_1
             .iter()
             .map(PathBuf::from)
-            .filter(&text_filter)
+            .filter(|p| video_mime_type_filter(p))
             .count();
-        assert_eq!(results_1, 3);
+        assert_eq!(results_1, 0);
         let test_vec_2 = vec!["file1.mp3", "file2.mp4", "file3.exe"];
         let results_2 = test_vec_2
             .iter()
             .map(PathBuf::from)
-            .filter(&text_filter)
+            .filter(|p| video_mime_type_filter(p))
             .count();
-        assert_eq!(results_2, 0);
-        let test_vec_3 = vec!["file1.mp3", "file2.txt", "file3.exe"];
+        assert_eq!(results_2, 1);
+        let test_vec_3 = vec!["file1.mp4", "file2.avi", "file3.flv"];
         let results_3 = test_vec_3
             .iter()
             .map(PathBuf::from)
-            .filter(&text_filter)
+            .filter(|p| video_mime_type_filter(p))
             .count();
-        assert_eq!(results_3, 1);
+        assert_eq!(results_3, 3);
     }
 }
