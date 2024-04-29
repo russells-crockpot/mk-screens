@@ -1,12 +1,12 @@
 //! Items relating to video files.
 
+use crate::Result;
 use std::{
     iter::repeat,
     path::{Path, PathBuf},
 };
 
 use derivative::Derivative;
-use eyre::{Report, Result};
 use ffmpeg::{
     codec::context::Context as CodecContext,
     decoder::Video as VideoDecoder,
@@ -92,7 +92,9 @@ pub fn find_best_stream<'a>(input: &'a Input, path: &Path) -> Result<Stream<'a>>
     input
         .streams()
         .find(|s| s.parameters().medium() == MediaType::Video)
-        .ok_or_else(|| Report::from(Error::NoVideoStream(path.into())))
+        .ok_or_else(|| Error::NoVideoStream {
+            path: path.display().to_string(),
+        })
 }
 
 #[derive(Derivative)]

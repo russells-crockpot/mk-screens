@@ -34,7 +34,9 @@ impl LinkableGraph for Graph {
             let ff_ptr = ffmpeg_sys::avfilter_graph_get_filter(self.as_mut_ptr(), from_s.as_ptr());
 
             let ff = if ff_ptr.is_null() {
-                return Err(eyre::Report::from(Error::NoSuchFilter(String::from(to))));
+                return Err(eyre::Report::from(Error::NoSuchFilter {
+                    filter_name: String::from(to),
+                }));
             } else {
                 ff_ptr
             };
@@ -42,7 +44,9 @@ impl LinkableGraph for Graph {
             let tf_ptr = ffmpeg_sys::avfilter_graph_get_filter(self.as_mut_ptr(), to_s.as_ptr());
 
             let tf = if tf_ptr.is_null() {
-                return Err(eyre::Report::from(Error::NoSuchFilter(String::from(to))));
+                return Err(eyre::Report::from(Error::NoSuchFilter {
+                    filter_name: String::from(to),
+                }));
             } else {
                 tf_ptr
             };

@@ -25,3 +25,4 @@ yaml
 polyamorous
 formatters
 async
+crate

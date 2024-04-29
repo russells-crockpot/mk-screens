@@ -9,10 +9,9 @@ use std::{
     time::SystemTime,
 };
 
-use eyre::Result;
 use globset::{Glob, GlobSet, GlobSetBuilder};
 
-use crate::{settings::Settings, util::sync_mtimes};
+use crate::{settings::Settings, util::sync_mtimes, Result};
 
 /// A convenience function to get the file name from a path as a string.
 pub fn get_filename<P: AsRef<Path>>(path: P) -> String {
@@ -294,7 +293,8 @@ impl Ignorer {
         if ignore_file_path.is_file() {
             log::debug!("Loading ignore file: {}", ignore_file_path.display());
             let reader = BufReader::new(fs::File::open(&ignore_file_path).unwrap());
-            for (lineno, line) in reader.lines().map(Result::unwrap).enumerate() {
+            // TODO
+            for (lineno, line) in reader.lines().map(|r| r.unwrap()).enumerate() {
                 match Glob::new(line.trim()) {
                     Ok(glob) => {
                         log::trace!("  Adding glob: {} (Regex: {})", glob.glob(), glob.regex());

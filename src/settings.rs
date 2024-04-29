@@ -1,12 +1,12 @@
 //!
 
+use crate::{Error, Result};
 use clap::Parser;
 use config::{
     builder::{ConfigBuilder as BaseConfigBuilder, DefaultState},
     Config, File as ConfigFile,
 };
 use directories::BaseDirs;
-use eyre::{Report, Result};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
@@ -163,7 +163,9 @@ impl Settings {
         let path = path_ref.as_ref();
         if path.exists() {
             if !path.is_file() {
-                return Err(Report::msg(format!("{} is not a file!", path.display())));
+                return Err(Error::NotAFile {
+                    path: path.display().to_string(),
+                });
             }
             Ok(conf_builder.add_source(ConfigFile::from(path)))
         } else {

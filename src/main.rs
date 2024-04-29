@@ -1,9 +1,22 @@
 extern crate ffmpeg_next as ffmpeg;
 
-use eyre::Result;
 use ffmpeg::util::log as ffmpeg_log;
+use mk_screens::{settings::Settings, Error, Result};
 
-#[cfg(feature = "pretty-errors")]
+#[cfg(all(debug_assertions, feature = "pretty-errors"))]
+fn _init_pretty_errors() -> Result<()> {
+    if let Err(std::env::VarError::NotPresent) = std::env::var("RUST_BACKTRACE") {
+        color_backtrace::BacktracePrinter::new()
+            .verbosity(color_backtrace::Verbosity::Full)
+            .install(color_backtrace::default_output_stream())
+    } else {
+        color_backtrace::install();
+    }
+    color_eyre::install()?;
+    Ok(())
+}
+
+#[cfg(all(not(debug_assertions), feature = "pretty-errors"))]
 fn _init_pretty_errors() -> Result<()> {
     color_backtrace::install();
     color_eyre::install()?;
@@ -26,16 +39,16 @@ fn init() -> Result<()> {
 
 fn main() -> Result<()> {
     init()?;
-    match mk_screens::settings::Settings::load() {
+    match Settings::load() {
         Ok(settings) => mk_screens::run(&settings),
         Err(error) => {
-            if error.is::<clap::Error>() {
-                let error = error.downcast::<clap::Error>()?;
-                if error.kind() == clap::error::ErrorKind::DisplayHelp {
-                    error.print()?;
+            if let Error::Clap { source: e } = error {
+                //TODO
+                if e.kind() == clap::error::ErrorKind::DisplayHelp {
+                    e.print()?;
                     Ok(())
                 } else {
-                    Err(error.into())
+                    Err(e.into())
                 }
             } else {
                 Err(error)
