@@ -31,7 +31,8 @@ pub(crate) fn default_multi_progress() -> Result<MultiProgress> {
         MultiProgress::new()
     };
     let logger = pretty_env_logger::formatted_builder().build();
+    //LogWrapper::new(mp.clone(), logger).try_init()?;
     LogWrapper::new(mp.clone(), logger).try_init()?;
-    //mp.set_move_cursor(true);
+    mp.set_move_cursor(false);
     Ok(mp)
 }

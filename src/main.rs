@@ -34,7 +34,7 @@ fn init() -> Result<()> {
     //TODO make configurable?
     ffmpeg_log::set_level(ffmpeg_log::Level::Panic);
     _init_pretty_errors()?;
-    pretty_env_logger::init();
+    //pretty_env_logger::init();
     ffmpeg::init()?;
     Ok(())
 }
