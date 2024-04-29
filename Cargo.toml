@@ -29,12 +29,12 @@ mime = "0.3.17"
 mime_guess = "2.0.4"
 pretty_env_logger = "0.5.0"
 rayon = "1.10.0"
-serde = { version = "1.0.198", features = ["derive"] }
+serde = { version = "1.0.199", features = ["derive"] }
 #serde_yaml = "0.9.29"
 serde_yaml = "0.8.26"
 structopt = "0.3.26"
 thiserror = "1.0.59"
-unicode-width = "0.1.11"
+unicode-width = "0.1.12"
 webp = "0.3.0"
 color-eyre = {version = "0.6.3", optional = true }
 eyre = "0.6.12"
