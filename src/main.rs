@@ -1,7 +1,8 @@
 extern crate ffmpeg_next as ffmpeg;
 
 use ffmpeg::util::log as ffmpeg_log;
-use mk_screens::{settings::Settings, Error, Result};
+use mk_screens::{files, process, settings::Settings, Error, Result};
+use std::fs::DirBuilder;
 
 #[cfg(all(debug_assertions, feature = "pretty-errors"))]
 fn _init_pretty_errors() -> Result<()> {
@@ -34,13 +35,31 @@ fn init() -> Result<()> {
     ffmpeg_log::set_level(ffmpeg_log::Level::Panic);
     _init_pretty_errors()?;
     pretty_env_logger::init();
+    ffmpeg::init()?;
+    Ok(())
+}
+
+fn run(settings: &Settings) -> Result<()> {
+    if !settings.out_dir().exists() {
+        log::info!(
+            "Out directory {} doesn't exist. Creating...",
+            settings.out_dir().display()
+        );
+        DirBuilder::new()
+            .recursive(true)
+            .create(settings.out_dir())?;
+    }
+    log::debug!("Settings: {:#?}", settings);
+    let video_files = files::get_video_files_to_process(settings)?;
+    //process_videos(&settings, video_files)?;
+    process::rayon_process_videos(settings, video_files)?;
     Ok(())
 }
 
 fn main() -> Result<()> {
     init()?;
     match Settings::load() {
-        Ok(settings) => mk_screens::run(&settings),
+        Ok(settings) => run(&settings),
         Err(error) => {
             if let Error::Clap { source: e } = error {
                 //TODO

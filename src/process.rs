@@ -1,5 +1,8 @@
-use crate::{cli, files, screencaps, settings, util, Result};
-use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget};
+use crate::{
+    cli::{self, MultiProgressExt as _},
+    files, screencaps, settings, Result,
+};
+use indicatif::ProgressBar;
 use rayon::prelude::*;
 use std::{
     iter,
@@ -7,7 +10,7 @@ use std::{
 };
 
 #[allow(clippy::panicking_unwrap)]
-pub(crate) fn process_video<P: AsRef<Path>>(
+pub fn process_video<P: AsRef<Path>>(
     pbar: &ProgressBar,
     settings: &settings::Settings,
     path: &P,
@@ -31,35 +34,26 @@ pub(crate) fn process_video<P: AsRef<Path>>(
     Ok(())
 }
 
-pub(crate) fn rayon_process_videos(
+pub fn rayon_process_videos(
     settings: &settings::Settings,
     mut video_files: Vec<PathBuf>,
 ) -> Result<()> {
-    let settings = settings.clone();
-    let mp = if util::envvar_to_bool("HIDE_PROGRESS_BARS") {
-        MultiProgress::with_draw_target(ProgressDrawTarget::hidden())
-    } else {
-        MultiProgress::new()
-    };
-    //mp.set_move_cursor(true);
-    let create_pbar = || {
-        let pbar = mp.add(ProgressBar::new((settings.num_captures() + 2) as u64));
-        pbar.set_style(cli::PROGRESS_BAR_STYLE.clone().clone());
-        Some(pbar)
-    };
+    let mp = cli::default_multi_progress()?;
     let items: Vec<(PathBuf, ProgressBar)> = video_files
         .drain(..)
-        .zip(iter::from_fn(create_pbar))
+        .zip(iter::from_fn(|| {
+            Some(mp.new_default_progress_bar(settings))
+        }))
         .collect();
     if settings.synchronous() {
         items
             .iter()
-            .try_for_each(|(path, pbar)| process_video(pbar, &settings, path))
+            .try_for_each(|(path, pbar)| process_video(pbar, settings, path))
         //.collect::<Result<()>>()
     } else {
         items
             .par_iter()
-            .map(|(path, pbar)| process_video(pbar, &settings, path))
+            .map(|(path, pbar)| process_video(pbar, settings, path))
             .collect::<Result<()>>()
     }?;
     Ok(())

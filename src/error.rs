@@ -2,6 +2,7 @@ use clap::Error as ClapError;
 use config::ConfigError;
 use eyre::Report as ReportError;
 use ffmpeg::util::error::Error as FfmpegError;
+use log::SetLoggerError;
 use paste::paste;
 use serde_yaml::Error as YamlError;
 use snafu::Snafu;
@@ -11,6 +12,9 @@ use std::io::Error as IoError;
 pub enum Error {
     Io {
         source: IoError,
+    },
+    SetLogger {
+        source: SetLoggerError,
     },
     Yaml {
         source: YamlError,
@@ -64,6 +68,7 @@ macro_rules! impl_from {
 
 impl_from! {Yaml}
 impl_from! {Io}
+impl_from! {SetLogger}
 impl_from! {Ffmpeg}
 impl_from! {Report}
 impl_from! {Clap}
