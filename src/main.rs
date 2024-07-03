@@ -1,7 +1,7 @@
 extern crate ffmpeg_next as ffmpeg;
 
 use ffmpeg::util::log as ffmpeg_log;
-use mk_screens::{files, process, settings::Settings, Error, Result};
+use mk_screens::{files, process, settings::Settings, util::ENV, Error, Result};
 use std::fs::DirBuilder;
 
 #[cfg(all(debug_assertions, feature = "pretty-errors"))]
@@ -31,10 +31,11 @@ fn _init_pretty_errors() -> Result<()> {
 
 fn init() -> Result<()> {
     dotenv::dotenv().ok();
-    //TODO make configurable?
-    ffmpeg_log::set_level(ffmpeg_log::Level::Panic);
+    ffmpeg_log::set_level(ENV.ffmpeg_log_level());
     _init_pretty_errors()?;
-    //pretty_env_logger::init();
+    if ENV.hide_progress_bars() {
+        pretty_env_logger::init();
+    }
     ffmpeg::init()?;
     Ok(())
 }
