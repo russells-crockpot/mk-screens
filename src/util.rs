@@ -1,4 +1,5 @@
 use crate::Result;
+use ffmpeg::util::log::Level as FfmpegLogLevel;
 use filetime::{set_file_mtime, FileTime};
 use std::{
     env,
@@ -6,8 +7,13 @@ use std::{
     fs,
     path::Path,
     str::FromStr as _,
+    sync::OnceLock,
 };
 use unicode_width::UnicodeWidthStr;
+
+lazy_static::lazy_static! {
+    pub static ref ENV: EnvVars = EnvVars::default();
+}
 
 #[derive(Debug, Clone)]
 pub struct Dimensions(pub u32, pub u32);
@@ -86,6 +92,66 @@ pub fn safe_string_truncate(s: &str, target_size: usize) -> String {
         cur_width = s.width();
     }
     s
+}
+
+#[derive(Debug, Default)]
+pub struct EnvVars {
+    hide_progress_bars: OnceLock<bool>,
+    save_individual_captures: OnceLock<bool>,
+    dir_for_each_individual_captures: OnceLock<bool>,
+    unwrap_errors: OnceLock<bool>,
+    ffmpeg_log_level: OnceLock<FfmpegLogLevel>,
+    ffmpeg_probesize: OnceLock<String>,
+    ffmpeg_analyzeduration: OnceLock<String>,
+}
+
+macro_rules! env_var_bool_getter {
+    ($field:ident, $var_name:literal) => {
+        pub fn $field(&self) -> bool {
+            *self.$field.get_or_init(|| envvar_to_bool($var_name))
+        }
+    };
+}
+
+macro_rules! env_var_str_getter {
+    ($field:ident, $var_name:literal, $default:literal) => {
+        pub fn $field(&self) -> &str {
+            self.$field
+                .get_or_init(|| env::var($var_name).unwrap_or(String::from($default)))
+        }
+    };
+}
+
+impl EnvVars {
+    env_var_bool_getter! {hide_progress_bars, "HIDE_PROGRESS_BARS"}
+    env_var_bool_getter! {save_individual_captures, "SAVE_INDIVIDUAL_CAPTURES"}
+    env_var_bool_getter! {dir_for_each_individual_captures, "DIR_FOR_EACH_INDIVIDUAL_CAPTURES"}
+    env_var_bool_getter! {unwrap_errors, "UNWRAP_ERRORS"}
+    env_var_str_getter! {ffmpeg_probesize, "FFMPEG_PROBESIZE", "250K"}
+    env_var_str_getter! {ffmpeg_analyzeduration, "FFMPEG_ANALYZEDURATION", "25M"}
+
+    pub fn ffmpeg_log_level(&self) -> FfmpegLogLevel {
+        *self
+            .ffmpeg_log_level
+            .get_or_init(|| match env::var("FFMPEG_LOG_LEVEL") {
+                Err(_) => FfmpegLogLevel::Panic,
+                Ok(level_str) => match level_str.to_lowercase().as_ref() {
+                    "quiet" => FfmpegLogLevel::Quiet,
+                    "panic" => FfmpegLogLevel::Panic,
+                    "fatal" => FfmpegLogLevel::Fatal,
+                    "error" => FfmpegLogLevel::Error,
+                    "warning" => FfmpegLogLevel::Warning,
+                    "info" => FfmpegLogLevel::Info,
+                    "verbose" => FfmpegLogLevel::Verbose,
+                    "debug" => FfmpegLogLevel::Debug,
+                    "trace" => FfmpegLogLevel::Trace,
+                    other => {
+                        log::warn!("Unknown ffmpeg log level: {}", other);
+                        FfmpegLogLevel::Panic
+                    }
+                },
+            })
+    }
 }
 
 #[cfg(test)]
