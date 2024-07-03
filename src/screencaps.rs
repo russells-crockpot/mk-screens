@@ -4,27 +4,28 @@ use eyre::Result;
 use ffmpeg::format::Pixel;
 use image::{imageops, ImageFormat, RgbImage};
 use indicatif::ProgressBar;
-use lazy_static::lazy_static;
-use std::{fs::DirBuilder, path::Path};
+#[cfg(target_family = "unix")]
+use std::os::unix::fs::symlink;
+#[cfg(target_family = "windows")]
+use std::os::windows::fs::symlink_dir as symlink;
+use std::{
+    fs::{self, DirBuilder},
+    path::{Path, PathBuf},
+};
 use unicode_width::UnicodeWidthStr;
 
 use crate::{
     files::get_filename,
     settings::Settings,
-    util::{envvar_to_bool, safe_string_truncate, sync_mtimes, Dimensions},
+    util::{safe_string_truncate, sync_mtimes, Dimensions, ENV},
     video::VidInfo,
 };
 
 const MAX_DISPLAY_NAME_WIDTH: usize = 80;
 
-lazy_static! {
-    static ref SAVE_INDIVIDUAL_IMGS: bool = envvar_to_bool("SAVE_INDIVIDUAL_CAPTURES");
-    static ref DIR_FOR_EACH_CAP: bool = envvar_to_bool("DIR_FOR_EACH_INDIVIDUAL_CAPTURES");
-}
-
 #[derive(Derivative)]
 #[derivative(Debug)]
-/// A representation of a screencap file.
+/// A representation of a single screen capture.
 pub struct ScreenCap {
     timestamp: i64,
     dimensions: Dimensions,
@@ -72,6 +73,7 @@ impl ScreenCap {
     }
 }
 
+/// Saves a [`ScreenCap`] as an individual file.
 fn save_individual_img<P>(
     settings: &Settings,
     cap: &ScreenCap,
@@ -83,7 +85,7 @@ where
 {
     let vidfile = vidfile.as_ref();
     let mut out_path = settings.out_dir().to_path_buf();
-    if *DIR_FOR_EACH_CAP {
+    if ENV.dir_for_each_individual_captures() {
         out_path.push(vidfile.file_stem().unwrap());
         if !out_path.exists() {
             DirBuilder::new()
@@ -97,6 +99,46 @@ where
         idx
     ));
     cap.save_file(&out_path)?;
+    Ok(())
+}
+
+/// Returns the path of the image we should link to instead, or `None` is there is no such image
+/// file.
+fn get_image_to_link_to<P>(settings: &Settings, video_file: P) -> Option<PathBuf>
+where
+    P: AsRef<Path>,
+{
+    if !settings.allow_links() {
+        log::trace!("Linking disabled");
+        return None;
+    }
+    if !video_file.as_ref().is_symlink() {
+        log::trace!("Video is not a symbolic link");
+        return None;
+    }
+    let mut video_path = if let Ok(p) = fs::canonicalize(&video_file) {
+        p
+    } else {
+        return None;
+    };
+    let filename = get_filename(&video_file);
+    video_path.pop();
+    video_path.push("screens");
+    video_path.push(format!("{}.jpg", filename));
+    if video_path.exists() {
+        Some(video_path)
+    } else {
+        None
+    }
+}
+
+fn finish_generation<P1, P2>(pbar: &ProgressBar, video_path: P1, image_path: P2) -> Result<()>
+where
+    P1: AsRef<Path>,
+    P2: AsRef<Path>,
+{
+    sync_mtimes(video_path, image_path)?;
+    pbar.finish_and_clear();
     Ok(())
 }
 
@@ -119,6 +161,22 @@ where
     log::debug!("Getting video info for {}", filename);
     let mut info = VidInfo::new(settings, &path)?;
     pbar.inc(1);
+    let mut out_path = settings.out_dir().to_path_buf();
+    out_path.push(info.img_file_name());
+    log::info!("Searching for image to link to for file {}", filename);
+    if let Some(image_path) = get_image_to_link_to(settings, &path) {
+        log::trace!(
+            "Found image to link to {} for file {}",
+            image_path.display(),
+            filename
+        );
+        if let Err(e) = symlink(image_path, &out_path) {
+            log::warn!("Could not link for {}: {}", filename, e);
+        } else {
+            log::trace!("Linked image for {}", filename);
+            return finish_generation(pbar, path, out_path);
+        }
+    }
     log::trace!("Generating capture times for {}", filename);
     let times = info.generate_capture_times(settings);
     log::trace!("Generated {} capture times for {}", times.len(), filename);
@@ -144,7 +202,7 @@ where
     for (idx, maybe_capture) in captures {
         let capture = maybe_capture?;
         imageops::replace(&mut img, &capture.thumbnail(), current_x, current_y);
-        if *SAVE_INDIVIDUAL_IMGS {
+        if ENV.save_individual_captures() {
             save_individual_img(settings, &capture, &path, idx)?;
         }
         current_x += (cap_width + 2) as i64;
@@ -153,10 +211,6 @@ where
             current_x = 1;
         }
     }
-    let mut out_path = settings.out_dir().to_path_buf();
-    out_path.push(info.img_file_name());
     img.save_with_format(out_path.clone(), ImageFormat::Jpeg)?;
-    sync_mtimes(&path, out_path)?;
-    pbar.finish_and_clear();
-    Ok(())
+    finish_generation(pbar, path, out_path)
 }

@@ -1,5 +1,3 @@
-//!
-
 use crate::{Error, Result};
 use clap::Parser;
 use config::{
@@ -22,8 +20,6 @@ pub struct Cli {
     keep_files: bool,
     #[arg(long)]
     force: bool,
-    #[arg(short = 'e', long)]
-    unwrap_errors: bool,
     #[arg(short, long)]
     verbose: bool,
     #[arg(
@@ -32,6 +28,12 @@ pub struct Cli {
         help = "If the video is smaller than the thumbnails would be, then scale up the thumbnail."
     )]
     scale_up: bool,
+    #[arg(
+        short = 'l',
+        long,
+        help = "If possible, link to an image instead of generating a new one."
+    )]
+    allow_links: bool,
     #[arg(short = 'y', long, help = "Process only one video at a time.")]
     synchronous: bool,
     #[arg(long, help = "Fixes the modified time of any existing screens files.")]
@@ -42,6 +44,8 @@ pub struct Cli {
     columns: Option<u32>,
     #[arg(short, long)]
     rows: Option<u32>,
+    #[arg(short, long)]
+    threads: Option<u8>,
     #[arg(
         short = 'i',
         long,
@@ -68,7 +72,6 @@ type ConfigBuilder = BaseConfigBuilder<DefaultState>;
 pub struct Settings {
     keep_files: bool,
     force: bool,
-    unwrap_errors: bool,
     verbose: bool,
     scale_up: bool,
     synchronous: bool,
@@ -76,9 +79,11 @@ pub struct Settings {
     width: u32,
     columns: u32,
     rows: u32,
+    threads: Option<u8>,
     save_failures_to_ignore: bool,
     skip: usize,
     out_dir: PathBuf,
+    allow_links: bool,
     #[serde(skip_serializing)]
     input: Vec<PathBuf>,
 }
@@ -107,6 +112,9 @@ impl Settings {
         if cli.keep_files {
             conf_builder = conf_builder.set_override("keep_files", true)?;
         }
+        if cli.allow_links {
+            conf_builder = conf_builder.set_override("allow_links", true)?;
+        }
         if cli.save_failures_to_ignore {
             conf_builder = conf_builder.set_override("save_failures_to_ignore", true)?;
         }
@@ -116,9 +124,6 @@ impl Settings {
         if cli.synchronous {
             conf_builder = conf_builder.set_override("synchronous", true)?;
         }
-        if cli.unwrap_errors {
-            conf_builder = conf_builder.set_override("unwrap_errors", true)?;
-        }
         if cli.verbose {
             conf_builder = conf_builder.set_override("verbose", true)?;
         }
@@ -126,6 +131,7 @@ impl Settings {
             .set_override_option("width", cli.width)?
             .set_override_option("columns", cli.columns)?
             .set_override_option("rows", cli.rows)?
+            .set_override_option("threads", cli.threads)?
             .set_override_option("skip", cli.skip)?
             .set_override_option("out_dir", cli.out_dir)?
             .set_override("input", cli.input)?)
@@ -176,8 +182,8 @@ impl Settings {
     fn get_default_config() -> Result<ConfigBuilder> {
         Ok(Config::builder()
             .set_default("keep_files", false)?
+            .set_default("allow_links", false)?
             .set_default("force", false)?
-            .set_default("unwrap_errors", false)?
             .set_default("scale_up", false)?
             .set_default("synchronous", false)?
             .set_default("verbose", false)?
@@ -194,12 +200,12 @@ impl Settings {
         (self.columns * self.rows) + 1
     }
 
-    pub fn keep_files(&self) -> bool {
-        self.keep_files
+    pub fn allow_links(&self) -> bool {
+        self.allow_links
     }
 
-    pub fn unwrap_errors(&self) -> bool {
-        self.unwrap_errors
+    pub fn keep_files(&self) -> bool {
+        self.keep_files
     }
 
     pub fn force(&self) -> bool {
@@ -232,6 +238,10 @@ impl Settings {
 
     pub fn rows(&self) -> u32 {
         self.rows
+    }
+
+    pub fn threads(&self) -> Option<u8> {
+        self.threads
     }
 
     pub fn skip(&self) -> f64 {

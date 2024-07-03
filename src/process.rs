@@ -2,10 +2,11 @@ use crate::{
     cli::{self, MultiProgressExt as _},
     files, screencaps,
     settings::Settings,
+    util::ENV,
     Result,
 };
 use indicatif::ProgressBar;
-use rayon::prelude::*;
+use rayon::{prelude::*, ThreadPoolBuilder};
 use std::{
     iter,
     path::{Path, PathBuf},
@@ -25,7 +26,7 @@ pub fn process_video<P: AsRef<Path>>(
         pbar.abandon_with_message(format!("File {} does not exist.", filename));
     } else {
         let result = screencaps::generate(pbar, settings, path);
-        if settings.unwrap_errors() && result.is_err() {
+        if ENV.unwrap_errors() && result.is_err() {
             result.unwrap();
         } else if let Err(error) = result {
             pbar.set_style(cli::ERROR_PROGRESS_BAR_STYLE.clone());
@@ -36,17 +37,27 @@ pub fn process_video<P: AsRef<Path>>(
     Ok(())
 }
 
-pub fn rayon_process_videos(settings: &Settings, mut video_files: Vec<PathBuf>) -> Result<()> {
+pub fn rayon_process_videos(settings: &Settings, video_files: Vec<PathBuf>) -> Result<()> {
     let mp = cli::default_multi_progress()?;
-    let mut items = video_files.drain(..).zip(iter::from_fn(|| {
+    let items = video_files.into_iter().zip(iter::from_fn(|| {
         Some(mp.new_default_progress_bar(settings))
     }));
     if settings.synchronous() {
-        items.try_for_each(|(path, pbar)| process_video(&pbar, settings, &path))
+        //items.try_for_each(|(path, pbar)| process_video(&pbar, settings, &path))
+        items
+            .map(|(path, pbar)| process_video(&pbar, settings, &path))
+            .collect::<Result<Vec<_>>>()
     } else {
+        if let Some(threads) = settings.threads() {
+            ThreadPoolBuilder::new()
+                .num_threads(threads as usize)
+                .build_global()
+                .unwrap();
+        }
         items
             .par_bridge()
-            .try_for_each(|(path, pbar)| process_video(&pbar, settings, &path))
+            .map(|(path, pbar)| process_video(&pbar, settings, &path))
+            .collect::<Result<Vec<_>>>()
     }?;
     Ok(())
 }
