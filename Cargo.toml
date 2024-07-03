@@ -32,7 +32,6 @@ rayon = "1.10.0"
 serde = { version = "1.0.199", features = ["derive"] }
 #serde_yaml = "0.9.29"
 serde_yaml = "0.8.26"
-structopt = "0.3.26"
 unicode-width = "0.1.12"
 webp = "0.3.0"
 color-eyre = {version = "0.6.3", optional = true }
@@ -41,6 +40,7 @@ color-backtrace = {version = "0.6.1", optional = true, features = ["resolve-modu
 indicatif-log-bridge = "0.2.2"
 snafu = { version = "0.8.2", features = ["backtrace", "guide"] }
 paste = "1.0.14"
+here = { version = "1", features = ["log"] }
 
 [features]
 default = ["pretty-errors"]
