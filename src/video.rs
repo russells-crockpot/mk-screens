@@ -11,16 +11,27 @@ use ffmpeg::{
     decoder::Video as VideoDecoder,
     filter::{self, Graph},
     format::{context::Input, stream::Stream, Pixel as PixelFormat},
-    util::{frame::video::Video, media::Type as MediaType},
+    util::{dictionary::Owned as FfmpegDictionary, frame::video::Video, media::Type as MediaType},
     Rational,
 };
 
 use crate::{
-    ffmpeg_ext::LinkableGraph as _, files::img_file_name, settings::Settings, util::Dimensions,
+    ffmpeg_ext::LinkableGraph as _,
+    files::img_file_name,
+    settings::Settings,
+    util::{Dimensions, ENV},
     Error, Result,
 };
 
 const BACK_TRIM_AMOUNT: f64 = 0.01;
+
+#[inline]
+fn input_opts<'a>() -> FfmpegDictionary<'a> {
+    let mut opts = FfmpegDictionary::new();
+    opts.set("probesize", ENV.ffmpeg_probesize());
+    opts.set("analyzeduration", ENV.ffmpeg_analyzeduration());
+    opts
+}
 
 fn format_rational(rational: &Rational) -> String {
     match rational.numerator() {
@@ -115,7 +126,7 @@ pub struct VidInfo {
 
 impl VidInfo {
     pub fn new<P: AsRef<Path>>(settings: &Settings, path: P) -> Result<Self> {
-        let input = ffmpeg::format::input(&path)?;
+        let input = ffmpeg::format::input_with_dictionary(&path, input_opts())?;
         let stream = find_best_stream(&input, &path)?;
         let decoder = CodecContext::from_parameters(stream.parameters())?
             .decoder()
@@ -129,10 +140,11 @@ impl VidInfo {
             (capture_width as f64 / dimensions.width() as f64) * dimensions.height() as f64;
         let capture_dimensions = Dimensions::new(capture_width, capture_height as u32);
         let filter = create_filter_graph(&decoder, &stream, &capture_dimensions)?;
+        let pixel_format = decoder.format();
         Ok(Self {
             path: path.as_ref().to_path_buf(),
             duration: input.duration(),
-            pixel_format: decoder.format(),
+            pixel_format,
             dimensions,
             capture_dimensions,
             video_stream_idx: stream.index(),
